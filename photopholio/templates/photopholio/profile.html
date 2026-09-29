@@ -1,0 +1,18 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}My profile{% endblock %}
+{% block content %}
+<div class="container section"><div class="row justify-content-center"><div class="col-lg-7">
+  <h1 style="font-size:2.6rem" class="mb-4">My profile</h1>
+  <div class="panel">
+    <div class="d-flex align-items-center gap-3 mb-4">
+      {% if profile.image %}<img src="{{ profile.image.url }}" alt="Your profile photo" class="rounded-circle" width="72" height="72" style="object-fit:cover">
+      {% else %}<div class="avatar" style="width:72px;height:72px;font-size:1.6rem">{{ user.first_name|slice:":1"|default:user.username|slice:":1"|upper }}</div>{% endif %}
+      <div><strong>{{ user.get_full_name|default:user.username }}</strong><br><span class="muted">{{ user.email }}</span></div>
+    </div>
+    <form method="post" enctype="multipart/form-data" novalidate>{% csrf_token %}
+      {% include 'photopholio/_form_fields.html' %}
+      <button class="btn btn-primary" type="submit">Save profile</button>
+    </form>
+  </div>
+</div></div></div>
+{% endblock %}

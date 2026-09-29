@@ -1,0 +1,49 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}Photographers{% endblock %}
+{% block content %}
+<div class="container section">
+  <h1 style="font-size:clamp(2.2rem,4.5vw,3.2rem)" class="mb-1">Photographers</h1>
+  <p class="muted mb-4">{{ page.paginator.count }} match{{ page.paginator.count|pluralize:"es," }} right now</p>
+  <div class="row g-4">
+    <aside class="col-lg-3">
+      <button class="btn btn-outline-dark d-lg-none w-100 mb-3" type="button" data-bs-toggle="collapse" data-bs-target="#filters" aria-expanded="false" aria-controls="filters"><i class="bi bi-sliders"></i> Filters</button>
+      <div class="collapse d-lg-block" id="filters">
+      <form class="filters" method="get">
+        <div class="mb-3"><label class="form-label" for="q">Name or keyword</label><input class="form-control" id="q" name="q" value="{{ filters.q }}"></div>
+        <div class="mb-3"><label class="form-label" for="city">City</label>
+          <select class="form-select" id="city" name="city"><option value="">Any city</option>{% for c in cities %}<option value="{{ c.id }}" {% if filters.city == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select></div>
+        <div class="mb-3"><label class="form-label" for="sp">Style</label>
+          <select class="form-select" id="sp" name="speciality"><option value="">Any style</option>{% for v,l in specialities %}<option value="{{ v }}" {% if filters.speciality == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+        <div class="mb-3"><label class="form-label" for="mr">Rating</label>
+          <select class="form-select" id="mr" name="min_rating"><option value="">Any rating</option>
+            <option value="4.5" {% if filters.min_rating == "4.5" %}selected{% endif %}>4.5 and up</option>
+            <option value="4" {% if filters.min_rating == "4" %}selected{% endif %}>4.0 and up</option>
+            <option value="3" {% if filters.min_rating == "3" %}selected{% endif %}>3.0 and up</option></select></div>
+        <div class="mb-3"><label class="form-label" for="sort">Sort by</label>
+          <select class="form-select" id="sort" name="sort">
+            <option value="rating" {% if filters.sort == "rating" %}selected{% endif %}>Highest rated</option>
+            <option value="price_low" {% if filters.sort == "price_low" %}selected{% endif %}>Price, low to high</option>
+            <option value="price_high" {% if filters.sort == "price_high" %}selected{% endif %}>Price, high to low</option>
+            <option value="experience" {% if filters.sort == "experience" %}selected{% endif %}>Most experienced</option></select></div>
+        <div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="av" name="available" value="1" {% if filters.available %}checked{% endif %}><label class="form-check-label" for="av">Only show available</label></div>
+        <button class="btn btn-primary w-100" type="submit">Apply</button>
+        <a class="btn btn-link w-100 mt-1" href="{% url 'photographer_list' %}">Clear filters</a>
+      </form>
+      </div>
+    </aside>
+    <section class="col-lg-9">
+      {% if page.object_list %}
+        <div class="grid-cards">{% for p in page %}{% include 'photopholio/_card.html' %}{% endfor %}</div>
+        {% if page.has_other_pages %}
+        <nav class="mt-4" aria-label="Pages"><ul class="pagination flex-wrap">
+          {% if page.has_previous %}<li class="page-item"><a class="page-link" href="?{{ querystring }}&page={{ page.previous_page_number }}">Previous</a></li>{% endif %}
+          {% for n in page.paginator.page_range %}<li class="page-item {% if n == page.number %}active{% endif %}"><a class="page-link" href="?{{ querystring }}&page={{ n }}">{{ n }}</a></li>{% endfor %}
+          {% if page.has_next %}<li class="page-item"><a class="page-link" href="?{{ querystring }}&page={{ page.next_page_number }}">Next</a></li>{% endif %}
+        </ul></nav>{% endif %}
+      {% else %}
+        <div class="panel text-center"><h3>Nobody matches that</h3><p class="muted">Try a different city or drop one of the filters.</p><a class="btn btn-primary" href="{% url 'photographer_list' %}">Clear filters</a></div>
+      {% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}

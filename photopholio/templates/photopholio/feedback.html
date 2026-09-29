@@ -1,0 +1,17 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}Write a review{% endblock %}
+{% block content %}
+<div class="container section" style="max-width:560px">
+  <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-4">How was {{ booking.photographer.name.split.0 }}?</h1>
+  <div class="panel"><form method="post" novalidate>{% csrf_token %}
+    <div class="mb-3"><span class="form-label d-block" id="rl">Your rating</span>
+      <div class="star-input" role="radiogroup" aria-labelledby="rl">
+        {% for v in "54321" %}<input type="radio" name="rating" id="star{{ v }}" value="{{ v }}" required><label for="star{{ v }}" title="{{ v }} star{{ v|pluralize }}">&#9733;</label>{% endfor %}
+      </div>
+      {% for e in form.rating.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+    <div class="mb-3"><label class="form-label" for="{{ form.comment.id_for_label }}">Tell others about it</label>{{ form.comment }}
+      {% for e in form.comment.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}</div>
+    <button class="btn btn-primary" type="submit">Post review</button>
+  </form></div>
+</div>
+{% endblock %}

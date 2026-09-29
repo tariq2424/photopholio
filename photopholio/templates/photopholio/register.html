@@ -1,0 +1,14 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}Create account{% endblock %}
+{% block content %}
+<div class="container"><div class="auth">
+  <div><h1 style="font-size:clamp(2.4rem,5vw,3.4rem)">Make an account</h1><p class="muted measure mt-3">It takes a minute. You need one to book a photographer and to review them afterwards.</p></div>
+  <div class="panel">
+    <form method="post" novalidate>{% csrf_token %}
+      {% include 'photopholio/_form_fields.html' %}
+      <button class="btn btn-primary w-100 py-2" type="submit">Create account</button>
+    </form>
+    <p class="mt-3 mb-0 muted">Already have one? <a href="{% url 'login' %}">Log in</a></p>
+  </div>
+</div></div>
+{% endblock %}

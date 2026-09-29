@@ -1,0 +1,75 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}{{ p.name }}, {{ p.get_specialities_display }} photographer in {{ p.city.name }}{% endblock %}
+{% block content %}
+<div class="container section has-book-bar">
+  <div class="row g-5">
+    <div class="col-lg-8">
+      <div class="profile-head">
+        {% if p.image %}<img class="avatar" src="{{ p.image.url }}" alt="{{ p.name }}">{% else %}<div class="avatar" aria-hidden="true">{{ p.initials }}</div>{% endif %}
+        <div>
+          <h1 style="font-size:clamp(2.2rem,5vw,3.2rem)">{{ p.name }}</h1>
+          <p class="muted mb-0"><i class="bi bi-camera"></i> {{ p.get_specialities_display }} &nbsp; <i class="bi bi-geo-alt"></i> {{ p.city.name }}, {{ p.city.state.name }}</p>
+        </div>
+      </div>
+      <div class="facts">
+        <div><strong>{% if p.rating %}<i class="bi bi-star-fill" style="color:var(--amber)"></i> {{ p.rating|floatformat:1 }}{% else %}New{% endif %}</strong><span>{{ reviews|length }} review{{ reviews|length|pluralize }}</span></div>
+        <div><strong>{{ p.experience_years }} years</strong><span>shooting professionally</span></div>
+        <div><strong>&#8377;{{ p.price_per_day }}</strong><span>for a full day</span></div>
+      </div>
+
+      <h2 class="mt-5 mb-2" style="font-size:1.8rem">About {{ p.name.split.0 }}</h2>
+      <p class="measure">{{ p.bio }}</p>
+
+      <h2 class="mt-5 mb-3" style="font-size:1.8rem">Portfolio</h2>
+      {% for pf in portfolios %}
+        <div class="mb-4">
+          <h3>{{ pf.title }}</h3>
+          {% if pf.description %}<p class="muted measure">{{ pf.description }}</p>{% endif %}
+          <div class="masonry">
+            {% for ph in pf.photos.all %}{% if ph.status == "published" %}
+              <button type="button" data-lightbox data-src="{{ ph.image.url }}" data-caption="{{ ph.caption }}" data-bs-toggle="modal" data-bs-target="#lightbox" aria-label="Open photo: {{ ph.caption|truncatechars:60 }}">
+                <img src="{{ ph.image.url }}" alt="{{ ph.caption|truncatechars:70 }}" loading="lazy"></button>
+            {% endif %}{% endfor %}
+          </div>
+        </div>
+      {% empty %}<p class="muted">{{ p.name.split.0 }} hasn't uploaded a portfolio yet.</p>{% endfor %}
+
+      <h2 class="mt-5 mb-1" style="font-size:1.8rem">What clients said</h2>
+      {% for r in reviews %}
+        <div class="review">
+          <div class="d-flex justify-content-between"><strong>{{ r.user.first_name|default:r.user.username }}</strong><span class="rating"><i class="bi bi-star-fill"></i> {{ r.rating|floatformat:1 }}</span></div>
+          <p class="mb-1">{{ r.comment }}</p><small class="muted">{{ r.review_date|date:"j F Y" }}</small>
+        </div>
+      {% empty %}<p class="muted">No reviews yet. They show up here after a booking is completed.</p>{% endfor %}
+    </div>
+
+    <aside class="col-lg-4">
+      <div class="book-card" id="book">
+        <h2 style="font-size:1.7rem">Book {{ p.name.split.0 }}</h2>
+        <p class="mb-3"><strong class="fs-4">&#8377;{{ p.price_per_day }}</strong> <span class="muted">per day</span></p>
+        {% if not p.is_available %}
+          <div class="alert alert-secondary mb-0">{{ p.name.split.0 }} isn't taking bookings right now. <a href="{% url 'photographer_list' %}">See other photographers</a>.</div>
+        {% else %}
+        <form method="post" novalidate>{% csrf_token %}
+          {% for f in form %}
+            <div class="mb-3"><label class="form-label" for="{{ f.id_for_label }}">{{ f.label }}</label>{{ f }}
+              {% for e in f.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}</div>
+          {% endfor %}
+          <button class="btn btn-primary w-100 py-2" type="submit">{% if user.is_authenticated %}Continue to payment{% else %}Log in to book{% endif %}</button>
+          <p class="small muted mt-2 mb-0">The date is held once you pay. You can cancel any time from My bookings.</p>
+        </form>
+        {% endif %}
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div class="book-bar d-lg-none"><span><strong>&#8377;{{ p.price_per_day }}</strong> <span class="muted">/ day</span></span><a class="btn btn-primary" href="#book">Book</a></div>
+
+<div class="modal fade" id="lightbox" tabindex="-1" aria-label="Photo viewer" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered"><div class="modal-content bg-dark text-white border-0">
+    <div class="modal-header border-0"><span id="lightboxCaption" class="small"></span><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
+    <div class="modal-body pt-0"><img id="lightboxImg" class="img-fluid w-100" alt=""></div>
+  </div></div>
+</div>
+{% endblock %}

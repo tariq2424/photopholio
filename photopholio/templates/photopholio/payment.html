@@ -1,0 +1,17 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}Payment{% endblock %}
+{% block content %}
+<div class="container section" style="max-width:560px">
+  <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-4">Confirm and pay</h1>
+  <div class="panel">
+    <h3 class="mb-0">{{ booking.photographer.name }}</h3>
+    <p class="muted">{{ booking.event_date|date:"l, j F Y" }} in {{ booking.photographer.city.name }}</p>
+    <div class="d-flex justify-content-between border-top pt-3 mb-3"><span>Total for the day</span><strong class="fs-4">&#8377;{{ booking.amount }}</strong></div>
+    <form method="post" novalidate>{% csrf_token %}
+      {% include 'photopholio/_form_fields.html' %}
+      <button class="btn btn-primary w-100 py-2" type="submit">Pay &#8377;{{ booking.amount }}</button>
+    </form>
+    <div class="alert alert-warning mt-3 mb-0 small">Demo checkout: no card details are collected and nothing is charged.</div>
+  </div>
+</div>
+{% endblock %}

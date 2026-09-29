@@ -1,0 +1,63 @@
+{% extends 'photopholio/base.html' %}
+{% block content %}
+<section class="hero">
+  <div class="container">
+    <div class="row g-5 align-items-center">
+      <div class="col-lg-7">
+        <h1>Book a photographer whose work you've actually seen.</h1>
+        <p class="lead muted measure mt-3 mb-0">Look through real portfolios, read what past clients wrote, and lock in your date. Weddings, portraits, events, whatever you're planning.</p>
+        <form class="searchbar" method="get" action="{% url 'photographer_list' %}" role="search">
+          <input class="form-control" name="q" placeholder="Name or keyword" aria-label="Name or keyword">
+          <span class="divider"></span>
+          <select class="form-select" name="city" aria-label="City"><option value="">Any city</option>{% for c in cities %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select>
+          <span class="divider"></span>
+          <select class="form-select" name="speciality" aria-label="Style"><option value="">Any style</option>{% for v,l in specialities %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select>
+          <button class="btn btn-primary" type="submit">Find photographers</button>
+        </form>
+        <p class="small muted mt-3 mb-0">{{ photographer_count }} photographer{{ photographer_count|pluralize }} in {{ city_count }} cit{{ city_count|pluralize:"y,ies" }}.</p>
+      </div>
+      <div class="col-lg-5 d-none d-md-block">
+        <div class="mosaic">
+          {% for p in featured|slice:":3" %}
+          <a href="{% url 'photographer_detail' p.slug %}">
+            {% if p.image %}<img src="{{ p.image.url }}" alt="{{ p.name }}">
+            {% else %}{% with cover=p.cover %}{% if cover %}<img src="{{ cover.image.url }}" alt="{{ cover.caption|truncatechars:60 }}">{% else %}<div class="tile-fallback">{{ p.initials }}</div>{% endif %}{% endwith %}{% endif %}
+            <span class="tag">{{ p.name }}, {{ p.city.name }}</span>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="section-head">
+      <h2>Top rated photographers</h2>
+      <a href="{% url 'photographer_list' %}">See everyone</a>
+    </div>
+    {% if featured %}<div class="grid-cards">{% for p in featured %}{% include 'photopholio/_card.html' %}{% endfor %}</div>
+    {% else %}<div class="panel text-center"><h3>No photographers added yet</h3><p class="muted mb-0">Add the first one from the admin panel and it will show up here.</p></div>{% endif %}
+  </div>
+</section>
+
+<section class="section band">
+  <div class="container">
+    <h2 class="mb-3">Not sure who to pick? Start with a style.</h2>
+    <div class="d-flex flex-wrap gap-2">{% for v,l in specialities %}<a class="chip" href="{% url 'photographer_list' %}?speciality={{ v }}">{{ l }}</a>{% endfor %}</div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <h2 class="mb-4">How it works</h2>
+    <ol class="steps">
+      <li><h3>Look around</h3><p class="muted mb-0">Filter by city, style, rating or budget.</p></li>
+      <li><h3>Check their work</h3><p class="muted mb-0">Open a portfolio, zoom into the photos, read the reviews.</p></li>
+      <li><h3>Pick a date and pay</h3><p class="muted mb-0">Your date is held as soon as the payment goes through.</p></li>
+      <li><h3>Say how it went</h3><p class="muted mb-0">Leave a review after the shoot so the next person knows what to expect.</p></li>
+    </ol>
+  </div>
+</section>
+{% endblock %}

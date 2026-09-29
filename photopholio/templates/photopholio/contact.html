@@ -1,0 +1,12 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}Contact us{% endblock %}
+{% block content %}
+<div class="container section"><div class="row g-5">
+  <div class="col-lg-5"><h1 style="font-size:clamp(2.4rem,5vw,3.4rem)">Got a question? Send it over.</h1>
+    <p class="muted lead-narrow mt-3">Planning something, or something went wrong with a booking? Write to us here and we'll get back to you.</p></div>
+  <div class="col-lg-7"><div class="panel"><form method="post" novalidate>{% csrf_token %}
+    {% include 'photopholio/_form_fields.html' %}
+    <button class="btn btn-primary" type="submit">Send message</button>
+  </form></div></div>
+</div></div>
+{% endblock %}
