@@ -55,9 +55,15 @@
     <ol class="steps">
       <li><h3>Look around</h3><p class="muted mb-0">Filter by city, style, rating or budget.</p></li>
       <li><h3>Check their work</h3><p class="muted mb-0">Open a portfolio, zoom into the photos, read the reviews.</p></li>
-      <li><h3>Pick a date and pay</h3><p class="muted mb-0">Your date is held as soon as the payment goes through.</p></li>
+      <li><h3>Request and pay</h3><p class="muted mb-0">Send a request for your date. Once the photographer accepts, you pay to confirm it.</p></li>
       <li><h3>Say how it went</h3><p class="muted mb-0">Leave a review after the shoot so the next person knows what to expect.</p></li>
     </ol>
+  </div>
+</section>
+<section class="section band">
+  <div class="container d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+    <div><h2 class="mb-1">Are you a photographer?</h2><p class="muted mb-0 measure">Create a profile, upload your best work and get booked. Every profile is reviewed before it goes live.</p></div>
+    <a class="btn btn-outline-dark" href="{% url 'register' %}?role=photographer">Join as a photographer</a>
   </div>
 </section>
 {% endblock %}

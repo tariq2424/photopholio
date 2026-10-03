@@ -1,0 +1,28 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}{% if ph %}Edit profile{% else %}Create profile{% endif %}{% endblock %}
+{% block content %}
+<div class="container section" style="max-width:720px">
+  <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-1">{% if ph %}Edit your profile{% else %}Create your profile{% endif %}</h1>
+  <p class="muted mb-4">This is what customers see on your public page.{% if ph and ph.status == 'approved' %} Your profile is live, so changes appear straight away.{% endif %}</p>
+  <div class="panel">
+    <form method="post" enctype="multipart/form-data" novalidate>{% csrf_token %}
+      {% for f in form %}
+        <div class="mb-3">
+          {% if f.field.widget.input_type == 'checkbox' %}
+            <div class="form-check">{{ f }}<label class="form-check-label" for="{{ f.id_for_label }}">{{ f.label }}</label></div>
+          {% else %}
+            <label class="form-label" for="{{ f.id_for_label }}">{{ f.label }}</label>{{ f }}
+          {% endif %}
+          {% if f.name == 'image' and ph and ph.image %}<div class="form-text">Current photo is kept unless you choose a new one.</div>{% endif %}
+          {% if f.name == 'city_name' %}<div class="form-text">Pick from the list or type a new city.</div>{% endif %}
+          {% for e in f.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+        </div>
+      {% endfor %}
+      {% for e in form.non_field_errors %}<div class="alert alert-danger">{{ e }}</div>{% endfor %}
+      <datalist id="city-options">{% for c in city_names %}<option value="{{ c }}">{% endfor %}</datalist>
+      <button class="btn btn-primary" type="submit">{% if ph %}Save profile{% else %}Create profile and continue{% endif %}</button>
+      {% if ph %}<a class="btn btn-link" href="{% url 'pro_dashboard' %}">Back to dashboard</a>{% endif %}
+    </form>
+  </div>
+</div>
+{% endblock %}

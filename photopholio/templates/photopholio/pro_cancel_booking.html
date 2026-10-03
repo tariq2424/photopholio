@@ -1,0 +1,21 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}Cancel booking{% endblock %}
+{% block content %}
+<div class="container section" style="max-width:600px">
+  <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-4">Cancel this booking?</h1>
+  <div class="panel">
+    <h3 class="mb-0">{{ booking.user.first_name|default:booking.user.username }}</h3>
+    <p class="muted">{{ booking.event_date|date:"l, j F Y" }}</p>
+    <div class="alert alert-warning small">
+      {% if paid %}The customer has paid, so they will get a <strong>full refund of &#8377;{{ paid.amount }}</strong>.{% else %}The customer has not paid yet.{% endif %}
+      This cancellation is recorded on your profile and the admin can see it. Please only cancel if you really have to.
+    </div>
+    <form method="post" novalidate>{% csrf_token %}
+      <div class="mb-3"><label class="form-label" for="{{ form.reason.id_for_label }}">{{ form.reason.label }}</label>{{ form.reason }}
+        {% for e in form.reason.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}</div>
+      <button class="btn btn-danger" type="submit">Cancel booking</button>
+      <a class="btn btn-link" href="{% url 'pro_dashboard' %}">Keep it</a>
+    </form>
+  </div>
+</div>
+{% endblock %}

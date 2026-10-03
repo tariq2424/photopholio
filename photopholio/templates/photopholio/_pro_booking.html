@@ -1,0 +1,22 @@
+<div class="booking">
+  <div class="date-badge"><b>{{ b.event_date|date:"j" }}</b><span>{{ b.event_date|date:"M Y" }}</span></div>
+  <div class="grow">
+    <h3 class="mb-0">{{ b.user.first_name|default:b.user.username }}</h3>
+    <span class="muted small">&#8377;{{ b.amount }}{% if b.is_paid and b.status != 'cancelled' %} paid{% endif %}{% if b.tool %} &middot; {{ b.tool }}{% endif %}</span>
+    {% if b.status == 'accepted' %}<div class="small muted">Waiting for payment until {{ b.payment_deadline|date:"j M, g:i a" }}.</div>{% endif %}
+    {% if b.status == 'confirmed' and not b.can_complete %}<div class="small muted">You can mark it completed on the event date.</div>{% endif %}
+    {% if b.status == 'cancelled' or b.status == 'declined' %}<div class="small muted">{% if b.cancelled_by == 'customer' %}Cancelled by the customer.{% elif b.cancelled_by == 'photographer' %}Cancelled by you.{% elif b.cancelled_by == 'system' %}{{ b.cancel_reason }}{% endif %}</div>{% endif %}
+  </div>
+  <span class="status status-{{ b.status }}">{{ b.get_status_display }}</span>
+  <div class="d-flex gap-2 flex-wrap">
+    {% if b.status == 'pending' %}
+      <form method="post" action="{% url 'pro_booking_action' b.pk 'accept' %}">{% csrf_token %}<button class="btn btn-primary btn-sm" type="submit">Accept</button></form>
+      <form method="post" action="{% url 'pro_booking_action' b.pk 'decline' %}" onsubmit="return confirm('Decline this request?')">{% csrf_token %}<button class="btn btn-outline-dark btn-sm" type="submit">Decline</button></form>
+    {% elif b.status == 'confirmed' and b.can_complete %}
+      <form method="post" action="{% url 'pro_booking_action' b.pk 'complete' %}">{% csrf_token %}<button class="btn btn-amber btn-sm" type="submit">Mark completed</button></form>
+    {% endif %}
+    {% if b.status == 'accepted' or b.status == 'confirmed' %}
+      <a class="btn btn-outline-danger btn-sm" href="{% url 'pro_booking_cancel' b.pk %}">Cancel</a>
+    {% endif %}
+  </div>
+</div>

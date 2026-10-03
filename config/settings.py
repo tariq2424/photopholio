@@ -1,26 +1,178 @@
+# """Django settings for PhotoPholio."""
+# import os
+# from pathlib import Path
+
+# import dj_database_url
+
+# BASE_DIR = Path(__file__).resolve().parent.parent
+
+# # --- Security / environment -------------------------------------------------
+# SECRET_KEY = os.environ.get("SECRET_KEY", "dev-only-insecure-key-change-in-production")
+# DEBUG = os.environ.get("DEBUG", "True") == "True"
+# ALLOWED_HOSTS = [h for h in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1,testserver").split(",") if h]
+# CSRF_TRUSTED_ORIGINS = [o for o in os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",") if o]
+
+# # Render.com sets this automatically
+# RENDER_HOST = os.environ.get("RENDER_EXTERNAL_HOSTNAME")
+# if RENDER_HOST:
+#     ALLOWED_HOSTS.append(RENDER_HOST)
+#     CSRF_TRUSTED_ORIGINS.append(f"https://{RENDER_HOST}")
+
+# # --- Apps --------------------------------------------------------------------
+# INSTALLED_APPS = [
+#     "jazzmin",  # admin theme (must be before django.contrib.admin)
+#     "django.contrib.admin",
+#     "django.contrib.auth",
+#     "django.contrib.contenttypes",
+#     "django.contrib.sessions",
+#     "django.contrib.messages",
+#     "django.contrib.staticfiles",
+#     "photopholio",
+# ]
+
+# MIDDLEWARE = [
+#     "django.middleware.security.SecurityMiddleware",
+#     "whitenoise.middleware.WhiteNoiseMiddleware",  # serves static files in production
+#     "django.contrib.sessions.middleware.SessionMiddleware",
+#     "django.middleware.common.CommonMiddleware",
+#     "django.middleware.csrf.CsrfViewMiddleware",
+#     "django.contrib.auth.middleware.AuthenticationMiddleware",
+#     "django.contrib.messages.middleware.MessageMiddleware",
+#     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+# ]
+
+# ROOT_URLCONF = "config.urls"
+
+# TEMPLATES = [
+#     {
+#         "BACKEND": "django.template.backends.django.DjangoTemplates",
+#         "DIRS": [],
+#         "APP_DIRS": True,
+#         "OPTIONS": {
+#             "context_processors": [
+#                 "django.template.context_processors.request",
+#                 "django.contrib.auth.context_processors.auth",
+#                 "django.contrib.messages.context_processors.messages",
+#             ],
+#         },
+#     },
+# ]
+
+# WSGI_APPLICATION = "config.wsgi.application"
+
+# # --- Database ----------------------------------------------------------------
+# # SQLite by default; set DATABASE_URL to use PostgreSQL in production.
+# DATABASES = {
+#     "default": dj_database_url.config(
+#         default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}", conn_max_age=600
+#     )
+# }
+
+# AUTH_PASSWORD_VALIDATORS = [
+#     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+#     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+#     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+#     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+# ]
+
+# LANGUAGE_CODE = "en-us"
+# TIME_ZONE = "Asia/Kolkata"
+# USE_I18N = True
+# USE_TZ = True
+
+# # --- Static & media ----------------------------------------------------------
+# STATIC_URL = "/static/"
+# STATIC_ROOT = BASE_DIR / "staticfiles"
+# STORAGES = {
+#     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+#     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
+# }
+# MEDIA_URL = "/media/"
+# MEDIA_ROOT = BASE_DIR / "media"
+
+# DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# # --- Auth --------------------------------------------------------------------
+# LOGIN_URL = "login"
+# LOGIN_REDIRECT_URL = "home"
+# LOGOUT_REDIRECT_URL = "home"
+
+# # --- Production hardening ------------------------------------------------------
+# if not DEBUG:
+#     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+#     SESSION_COOKIE_SECURE = True
+#     CSRF_COOKIE_SECURE = True
+
+# # --- Jazzmin (admin theme) -----------------------------------------------------
+# JAZZMIN_SETTINGS = {
+#     "site_title": "PhotoPholio Admin",
+#     "site_header": "PhotoPholio",
+#     "site_brand": "PhotoPholio",
+#     "welcome_sign": "PhotoPholio control room",
+#     "copyright": "PhotoPholio",
+#     "search_model": ["photopholio.Photographer", "photopholio.Booking"],
+#     "icons": {
+#         "auth.User": "fas fa-user",
+#         "photopholio.Photographer": "fas fa-camera",
+#         "photopholio.Portfolio": "fas fa-folder-open",
+#         "photopholio.Photo": "fas fa-image",
+#         "photopholio.Booking": "fas fa-calendar-check",
+#         "photopholio.Payment": "fas fa-credit-card",
+#         "photopholio.Feedback": "fas fa-star",
+#         "photopholio.ContactUs": "fas fa-envelope",
+#         "photopholio.Country": "fas fa-globe",
+#         "photopholio.State": "fas fa-map",
+#         "photopholio.City": "fas fa-city",
+#         "photopholio.UserProfile": "fas fa-id-card",
+#     },
+# }
+
+
 """Django settings for PhotoPholio."""
+
 import os
 from pathlib import Path
 
 import dj_database_url
 
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
 # --- Security / environment -------------------------------------------------
-SECRET_KEY = os.environ.get("SECRET_KEY", "dev-only-insecure-key-change-in-production")
+
+SECRET_KEY = os.environ.get(
+    "SECRET_KEY",
+    "dev-only-insecure-key-change-in-production"
+)
+
 DEBUG = os.environ.get("DEBUG", "True") == "True"
-ALLOWED_HOSTS = [h for h in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1,testserver").split(",") if h]
-CSRF_TRUSTED_ORIGINS = [o for o in os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",") if o]
+
+ALLOWED_HOSTS = [
+    h for h in os.environ.get(
+        "ALLOWED_HOSTS",
+        "localhost,127.0.0.1,testserver"
+    ).split(",") if h
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    o for o in os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",") if o
+]
+
 
 # Render.com sets this automatically
+
 RENDER_HOST = os.environ.get("RENDER_EXTERNAL_HOSTNAME")
+
 if RENDER_HOST:
     ALLOWED_HOSTS.append(RENDER_HOST)
     CSRF_TRUSTED_ORIGINS.append(f"https://{RENDER_HOST}")
 
-# --- Apps --------------------------------------------------------------------
+
+# --- Apps -------------------------------------------------------------------
+
 INSTALLED_APPS = [
-    "jazzmin",  # admin theme (must be before django.contrib.admin)
+    "jazzmin",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -30,9 +182,12 @@ INSTALLED_APPS = [
     "photopholio",
 ]
 
+
+# --- Middleware -------------------------------------------------------------
+
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",  # serves static files in production
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -41,13 +196,21 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
+
 ROOT_URLCONF = "config.urls"
+
+
+# --- Templates --------------------------------------------------------------
 
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+
+        # Updated: include the app's templates directory
+        "DIRS": [BASE_DIR / "photopholio" / "templates"],
+
         "APP_DIRS": True,
+
         "OPTIONS": {
             "context_processors": [
                 "django.template.context_processors.request",
@@ -58,59 +221,105 @@ TEMPLATES = [
     },
 ]
 
+
 WSGI_APPLICATION = "config.wsgi.application"
 
-# --- Database ----------------------------------------------------------------
+
+# --- Database ---------------------------------------------------------------
+
 # SQLite by default; set DATABASE_URL to use PostgreSQL in production.
+
 DATABASES = {
     "default": dj_database_url.config(
-        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}", conn_max_age=600
+        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
+        conn_max_age=600,
     )
 }
 
+
+# --- Password validation ----------------------------------------------------
+
 AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
-    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
-    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"
+    },
 ]
 
+
+# --- Internationalization ---------------------------------------------------
+
 LANGUAGE_CODE = "en-us"
+
 TIME_ZONE = "Asia/Kolkata"
+
 USE_I18N = True
+
 USE_TZ = True
 
-# --- Static & media ----------------------------------------------------------
+
+# --- Static & media ---------------------------------------------------------
+
 STATIC_URL = "/static/"
+
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
 STORAGES = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage"
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"
+    },
 }
+
 MEDIA_URL = "/media/"
+
 MEDIA_ROOT = BASE_DIR / "media"
+
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# --- Auth --------------------------------------------------------------------
+
+# --- Authentication ---------------------------------------------------------
+
 LOGIN_URL = "login"
+
 LOGIN_REDIRECT_URL = "home"
+
 LOGOUT_REDIRECT_URL = "home"
 
-# --- Production hardening ------------------------------------------------------
+
+# --- Production hardening ---------------------------------------------------
+
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
 
-# --- Jazzmin (admin theme) -----------------------------------------------------
+
+# --- Jazzmin (admin theme) --------------------------------------------------
+
 JAZZMIN_SETTINGS = {
     "site_title": "PhotoPholio Admin",
     "site_header": "PhotoPholio",
     "site_brand": "PhotoPholio",
     "welcome_sign": "PhotoPholio control room",
     "copyright": "PhotoPholio",
-    "search_model": ["photopholio.Photographer", "photopholio.Booking"],
+
+    "search_model": [
+        "photopholio.Photographer",
+        "photopholio.Booking",
+    ],
+
     "icons": {
         "auth.User": "fas fa-user",
         "photopholio.Photographer": "fas fa-camera",

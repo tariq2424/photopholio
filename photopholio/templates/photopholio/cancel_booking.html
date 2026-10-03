@@ -1,0 +1,25 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}Cancel booking{% endblock %}
+{% block content %}
+<div class="container section" style="max-width:600px">
+  <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-4">Cancel this booking?</h1>
+  <div class="panel">
+    <h3 class="mb-0">{{ booking.photographer.name }}</h3>
+    <p class="muted">{{ booking.event_date|date:"l, j F Y" }} in {{ booking.photographer.city.name }}</p>
+    {% if paid %}
+      <div class="border-top pt-3 mb-3">
+        <div class="d-flex justify-content-between"><span>You paid</span><strong>&#8377;{{ paid.amount }}</strong></div>
+        <div class="d-flex justify-content-between"><span>Refund if you cancel now ({{ percent }}%)</span><strong>&#8377;{{ refund }}</strong></div>
+        {% if days >= 0 %}<p class="small muted mt-2 mb-0">The event is {{ days }} day{{ days|pluralize }} away.</p>{% else %}<p class="small muted mt-2 mb-0">The event date has passed.</p>{% endif %}
+      </div>
+      {% if not refund %}<div class="alert alert-warning small">This is too close to the event for a refund. See the <a href="{% url 'cancellation_policy' %}">cancellation policy</a>.</div>{% endif %}
+    {% else %}
+      <p class="mb-3">Nothing has been charged for this booking, so there is nothing to refund.</p>
+    {% endif %}
+    <form method="post">{% csrf_token %}
+      <button class="btn btn-danger" type="submit">Yes, cancel booking</button>
+      <a class="btn btn-link" href="{% url 'my_bookings' %}">Keep it</a>
+    </form>
+  </div>
+</div>
+{% endblock %}

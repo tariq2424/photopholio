@@ -2,25 +2,39 @@
 {% block title %}My bookings{% endblock %}
 {% block content %}
 <div class="container section" style="max-width:900px">
-  <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-4">My bookings</h1>
+  <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-1">My bookings</h1>
+  <p class="muted mb-4">The photographer accepts your request first, then you pay to confirm the date. <a href="{% url 'cancellation_policy' %}">Cancellation policy</a></p>
   {% for b in bookings %}
   <div class="booking">
     <div class="date-badge"><b>{{ b.event_date|date:"j" }}</b><span>{{ b.event_date|date:"M Y" }}</span></div>
     <div class="grow">
       <h3 class="mb-0"><a href="{% url 'photographer_detail' b.photographer.slug %}" class="text-reset text-decoration-none">{{ b.photographer.name }}</a></h3>
-      <span class="muted small">{{ b.photographer.get_specialities_display }} in {{ b.photographer.city.name }} &nbsp;|&nbsp; &#8377;{{ b.amount }}{% if b.is_paid %} paid{% endif %}</span>
+      <span class="muted small">{{ b.photographer.get_specialities_display }} in {{ b.photographer.city.name }} &nbsp;|&nbsp; &#8377;{{ b.amount }}{% if b.is_paid and b.status != 'cancelled' %} paid{% endif %}</span>
       {% if b.tool %}<div class="small muted">Notes: {{ b.tool }}</div>{% endif %}
+      {% if b.status == 'pending' %}<div class="small muted">Waiting for {{ b.photographer.name }} to accept. You will not be charged until they do.</div>{% endif %}
+      {% if b.status == 'accepted' %}<div class="small"><strong>Accepted.</strong> Pay by {{ b.payment_deadline|date:"j M, g:i a" }} to confirm your date.</div>{% endif %}
+      {% if b.status == 'cancelled' or b.status == 'declined' %}
+        <div class="small muted">
+          {% if b.cancel_reason %}{{ b.cancel_reason }}{% elif b.status == 'declined' %}The photographer could not take this date.{% endif %}
+          {% if b.cancelled_by == 'photographer' and b.status == 'cancelled' %}(cancelled by the photographer){% endif %}
+        </div>
+        {% with pay=b.paid_payment %}{% if pay %}
+          <div class="refund-note">
+            {% if pay.refund_amount %}Refund of &#8377;{{ pay.refund_amount }}: <strong>{{ pay.get_refund_status_display }}</strong>{% if pay.refunded_at %} on {{ pay.refunded_at|date:"j M Y" }}{% endif %}
+            {% else %}No refund under the cancellation policy.{% endif %}
+          </div>
+        {% endif %}{% endwith %}
+      {% endif %}
     </div>
     <span class="status status-{{ b.status }}">{{ b.get_status_display }}</span>
     <div class="d-flex gap-2 flex-wrap">
-      {% if b.status == 'pending' and not b.is_paid %}<a class="btn btn-primary btn-sm" href="{% url 'payment' b.pk %}">Pay now</a>{% endif %}
+      {% if b.status == 'accepted' %}<a class="btn btn-primary btn-sm" href="{% url 'payment' b.pk %}">Pay now</a>{% endif %}
       {% if b.can_review %}<a class="btn btn-amber btn-sm" href="{% url 'feedback_create' b.pk %}">Write a review</a>{% endif %}
-      {% if b.status == 'pending' or b.status == 'confirmed' %}
-      <form method="post" action="{% url 'booking_cancel' b.pk %}" onsubmit="return confirm('Cancel this booking?')">{% csrf_token %}<button class="btn btn-outline-dark btn-sm" type="submit">Cancel</button></form>{% endif %}
+      {% if b.status == 'pending' or b.status == 'accepted' or b.status == 'confirmed' %}<a class="btn btn-outline-dark btn-sm" href="{% url 'booking_cancel' b.pk %}">Cancel</a>{% endif %}
     </div>
   </div>
   {% empty %}
-  <div class="panel text-center"><h3>You haven't booked anyone yet</h3><p class="muted">Find a photographer you like and pick a date.</p><a class="btn btn-primary" href="{% url 'photographer_list' %}">Browse photographers</a></div>
+  <div class="panel text-center"><h3>You haven't booked anyone yet</h3><p class="muted">Find a photographer you like and send a request for your date.</p><a class="btn btn-primary" href="{% url 'photographer_list' %}">Browse photographers</a></div>
   {% endfor %}
 </div>
 {% endblock %}

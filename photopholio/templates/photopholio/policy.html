@@ -1,0 +1,32 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}Cancellation policy{% endblock %}
+{% block content %}
+<div class="container section" style="max-width:760px">
+  <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-3">Cancellation policy</h1>
+  <p class="muted measure">Short and simple. This is a demo platform, so no real money moves, but the rules below are exactly what the app applies.</p>
+
+  <h2 class="mt-4 mb-3" style="font-size:1.6rem">How a booking works</h2>
+  <ol>
+    <li>You send a request for a date. Nothing is charged.</li>
+    <li>The photographer accepts or declines.</li>
+    <li>If accepted, you have <strong>{{ window }} hours</strong> to pay. If you do not, the request lapses and nothing is charged.</li>
+    <li>After payment the booking is confirmed.</li>
+  </ol>
+
+  <h2 class="mt-4 mb-3" style="font-size:1.6rem">If you cancel a paid booking</h2>
+  <table class="table align-middle">
+    <thead><tr><th>When you cancel</th><th class="text-end">Refund</th></tr></thead>
+    <tbody>{% for label, percent in rows %}<tr><td>{{ label }}</td><td class="text-end"><strong>{{ percent }}%</strong></td></tr>{% endfor %}</tbody>
+  </table>
+  <p class="small muted">Days are counted from the day you cancel to the event date.</p>
+
+  <h2 class="mt-4 mb-3" style="font-size:1.6rem">If the photographer cancels</h2>
+  <p>You get a <strong>100% refund</strong>, whatever the date. Every cancellation by a photographer is recorded and reviewed by the admin.</p>
+
+  <h2 class="mt-4 mb-3" style="font-size:1.6rem">If the photographer does not show up</h2>
+  <p>Contact us. After we look into it you get a full refund.</p>
+
+  <h2 class="mt-4 mb-3" style="font-size:1.6rem">How refunds are paid</h2>
+  <p>Cancelling and refunding are two steps. When you cancel, the refund shows as <em>pending</em>. It changes to <em>refunded</em> once the admin has processed it.</p>
+</div>
+{% endblock %}

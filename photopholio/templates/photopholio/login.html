@@ -2,14 +2,20 @@
 {% block title %}Log in{% endblock %}
 {% block content %}
 <div class="container"><div class="auth">
-  <div><h1 style="font-size:clamp(2.4rem,5vw,3.4rem)">Welcome back</h1><p class="muted measure mt-3">Log in to book a photographer, check your bookings or leave a review.</p></div>
+  <div>
+    {% if login_role == 'photographer' %}<span class="chip" style="cursor:default">Photographers</span>{% endif %}
+    <h1 {% if login_role == 'photographer' %}class="mt-3"{% endif %} style="font-size:clamp(2.4rem,5vw,3.4rem)">Welcome back</h1>
+    <p class="muted measure mt-3">Customers and photographers log in here. Use your username or your email.
+      {% if login_role == 'photographer' %}You will land on your dashboard.{% else %}Photographers land on their dashboard after logging in.{% endif %}</p>
+  </div>
   <div class="panel">
     <form method="post" novalidate>{% csrf_token %}
       <input type="hidden" name="next" value="{{ next }}">
       {% include 'photopholio/_form_fields.html' %}
       <button class="btn btn-primary w-100 py-2" type="submit">Log in</button>
     </form>
-    <p class="mt-3 mb-0 muted">No account yet? <a href="{% url 'register' %}">Create one</a></p>
+    <p class="mt-3 mb-1 muted">No account yet? <a href="{% url 'register' %}">Create one</a>
+      &middot; <a href="{% url 'register' %}?role=photographer">Join as a photographer</a></p>
   </div>
 </div></div>
 {% endblock %}

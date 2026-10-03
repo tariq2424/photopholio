@@ -1,0 +1,53 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}My portfolio{% endblock %}
+{% block content %}
+<div class="container section">
+  <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-1">My portfolio</h1>
+  <p class="muted mb-4">You need at least 4 photos of your own work to submit your profile. You have <strong>{{ photo_count }}</strong>.
+    <a href="{% url 'pro_dashboard' %}">Back to dashboard</a></p>
+
+  <div class="row g-5">
+    <div class="col-lg-8">
+      {% for pf in portfolios %}
+      <div class="panel mb-4">
+        <div class="d-flex justify-content-between align-items-start gap-2">
+          <div><h3 class="mb-0">{{ pf.title }}</h3>{% if pf.description %}<p class="muted mb-2">{{ pf.description }}</p>{% endif %}</div>
+          <form method="post" action="{% url 'pro_portfolio_delete' pf.pk %}" onsubmit="return confirm('Delete this portfolio and all its photos?')">{% csrf_token %}<button class="btn btn-outline-danger btn-sm" type="submit">Delete</button></form>
+        </div>
+        <div class="thumbs">
+          {% for photo in pf.photos.all %}
+          <div class="thumb"><img src="{{ photo.image.url }}" alt="{{ photo.caption|truncatechars:60 }}" loading="lazy">
+            <form method="post" action="{% url 'pro_photo_delete' photo.pk %}" onsubmit="return confirm('Remove this photo?')">{% csrf_token %}<button class="thumb-x" type="submit" aria-label="Remove photo">&times;</button></form>
+          </div>
+          {% empty %}<p class="muted mb-0">No photos in this portfolio yet.</p>{% endfor %}
+        </div>
+      </div>
+      {% empty %}
+      <div class="panel text-center"><h3>No portfolio yet</h3><p class="muted mb-0">Create one on the right, then add photos to it.</p></div>
+      {% endfor %}
+    </div>
+
+    <aside class="col-lg-4">
+      <div class="panel mb-4">
+        <h3 class="mb-3">New portfolio</h3>
+        <form method="post" novalidate>{% csrf_token %}<input type="hidden" name="action" value="portfolio">
+          {% for f in portfolio_form %}<div class="mb-3"><label class="form-label" for="{{ f.id_for_label }}">{{ f.label }}</label>{{ f }}
+            {% for e in f.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}</div>{% endfor %}
+          <button class="btn btn-outline-dark w-100" type="submit">Create portfolio</button>
+        </form>
+      </div>
+      {% if portfolios %}
+      <div class="panel">
+        <h3 class="mb-3">Add a photo</h3>
+        <form method="post" enctype="multipart/form-data" novalidate>{% csrf_token %}<input type="hidden" name="action" value="photo">
+          {% for f in photo_form %}<div class="mb-3"><label class="form-label" for="{{ f.id_for_label }}">{{ f.label }}</label>{{ f }}
+            {% for e in f.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}</div>{% endfor %}
+          <button class="btn btn-primary w-100" type="submit">Upload photo</button>
+          <p class="small muted mt-2 mb-0">JPG or PNG, up to 5 MB. Only upload photos you took yourself.</p>
+        </form>
+      </div>
+      {% endif %}
+    </aside>
+  </div>
+</div>
+{% endblock %}

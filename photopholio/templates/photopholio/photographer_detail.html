@@ -2,6 +2,13 @@
 {% block title %}{{ p.name }}, {{ p.get_specialities_display }} photographer in {{ p.city.name }}{% endblock %}
 {% block content %}
 <div class="container section has-book-bar">
+  {% if p.status != 'approved' %}
+  <div class="alert alert-warning">
+    {% if is_owner %}<strong>Preview.</strong> Only you can see this page. Status: {{ p.get_status_display }}.
+      <a href="{% url 'pro_dashboard' %}">Back to your dashboard</a>
+    {% else %}<strong>Admin preview.</strong> This profile is {{ p.get_status_display|lower }} and hidden from customers.{% endif %}
+  </div>
+  {% endif %}
   <div class="row g-5">
     <div class="col-lg-8">
       <div class="profile-head">
@@ -47,7 +54,11 @@
       <div class="book-card" id="book">
         <h2 style="font-size:1.7rem">Book {{ p.name.split.0 }}</h2>
         <p class="mb-3"><strong class="fs-4">&#8377;{{ p.price_per_day }}</strong> <span class="muted">per day</span></p>
-        {% if not p.is_available %}
+        {% if p.status != 'approved' %}
+          <div class="alert alert-secondary mb-0">Customers can book this photographer once the profile is approved.</div>
+        {% elif role == 'photographer' %}
+          <div class="alert alert-secondary mb-0">You are logged in as a photographer. Use a customer account to make bookings.</div>
+        {% elif not p.is_available %}
           <div class="alert alert-secondary mb-0">{{ p.name.split.0 }} isn't taking bookings right now. <a href="{% url 'photographer_list' %}">See other photographers</a>.</div>
         {% else %}
         <form method="post" novalidate>{% csrf_token %}
@@ -55,8 +66,8 @@
             <div class="mb-3"><label class="form-label" for="{{ f.id_for_label }}">{{ f.label }}</label>{{ f }}
               {% for e in f.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}</div>
           {% endfor %}
-          <button class="btn btn-primary w-100 py-2" type="submit">{% if user.is_authenticated %}Continue to payment{% else %}Log in to book{% endif %}</button>
-          <p class="small muted mt-2 mb-0">The date is held once you pay. You can cancel any time from My bookings.</p>
+          <button class="btn btn-primary w-100 py-2" type="submit">{% if user.is_authenticated %}Send booking request{% else %}Log in to book{% endif %}</button>
+          <p class="small muted mt-2 mb-0">You pay only after {{ p.name.split.0 }} accepts. <a href="{% url 'cancellation_policy' %}">Cancellation policy</a></p>
         </form>
         {% endif %}
       </div>
@@ -64,7 +75,7 @@
   </div>
 </div>
 
-<div class="book-bar d-lg-none"><span><strong>&#8377;{{ p.price_per_day }}</strong> <span class="muted">/ day</span></span><a class="btn btn-primary" href="#book">Book</a></div>
+{% if can_book %}<div class="book-bar d-lg-none"><span><strong>&#8377;{{ p.price_per_day }}</strong> <span class="muted">/ day</span></span><a class="btn btn-primary" href="#book">Book</a></div>{% endif %}
 
 <div class="modal fade" id="lightbox" tabindex="-1" aria-label="Photo viewer" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-centered"><div class="modal-content bg-dark text-white border-0">

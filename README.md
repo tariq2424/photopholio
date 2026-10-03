@@ -12,13 +12,19 @@ book an event date, pay (demo checkout) and leave reviews. Built from my GTU sum
 - Search and filter photographers (keyword, city, style, minimum rating, availability, sort, pagination)
 - Photographer profile with portfolios, photo gallery lightbox and client reviews
 - Register / log in / log out using Django's built-in authentication (hashed passwords)
-- Booking with validation (no past dates, no double-booking of the same photographer and day)
+- Request, accept, pay: the customer requests a date, the photographer accepts or declines, then the customer pays within 24 hours to confirm (demo checkout)
+- Cancellation policy applied by the app: full refund 2+ days before the event, 50% one day before, none on the day, 100% if the photographer cancels. Refunds are tracked separately and marked processed by the admin
+- Photographers can accept, decline, cancel (with a reason) and mark shoots completed; the admin sees every photographer cancellation
+- No double-booking: accepting a date automatically declines other requests for it
 - Demo payment flow that confirms the booking; cancel bookings; leave a review after a completed booking
 - Photographer rating auto-updates from reviews
+- Two account types chosen at signup: customers (book) and photographers (list their work). Each has its own login page
+- Photographer area: create a profile, manage portfolios and photos, see bookings, submit for review
+- Admin approval: a photographer's profile stays hidden from customers until an admin approves it (with a reject reason the photographer can read)
 - Contact form; user profile with photo upload
 - Customised admin (Jazzmin): filters, search, inline editing, image previews, "mark completed" action
 - Responsive UI (Bootstrap 5), keyboard-focus styles, reduced-motion support
-- 7 automated tests
+- 39 automated tests
 
 ## Tech stack
 Python 3.10+, Django 5.2, SQLite (PostgreSQL via `DATABASE_URL`), Pillow, Bootstrap 5, WhiteNoise, Gunicorn.

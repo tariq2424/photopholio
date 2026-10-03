@@ -1,0 +1,67 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}Photographer dashboard{% endblock %}
+{% block content %}
+<div class="container section" style="max-width:960px">
+  <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-1">Hi {{ user.first_name|default:user.username }}</h1>
+  <p class="muted mb-4">This is your photographer dashboard.</p>
+
+  {% if not ph %}
+  <div class="panel text-center">
+    <h3>Let's set up your profile</h3>
+    <p class="muted measure mx-auto">Tell customers who you are, what you shoot and what you charge. You will add your portfolio photos next.</p>
+    <a class="btn btn-primary" href="{% url 'pro_profile' %}">Create my profile</a>
+  </div>
+  {% else %}
+  <div class="panel mb-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+      <div><span class="muted small">Profile status</span><br><span class="pstatus pstatus-{{ ph.status }}">{{ ph.get_status_display }}</span></div>
+      <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-outline-dark btn-sm" href="{% url 'pro_profile' %}">Edit profile</a>
+        <a class="btn btn-outline-dark btn-sm" href="{% url 'pro_portfolio' %}">Manage portfolio</a>
+        <a class="btn btn-outline-dark btn-sm" href="{% url 'photographer_detail' ph.slug %}">{% if ph.status == 'approved' %}View public page{% else %}Preview as customer{% endif %}</a>
+      </div>
+    </div>
+
+    {% if ph.status == 'draft' %}
+      <p class="mb-2">Only you can see this profile right now. Finish the checklist below, then submit it for review.</p>
+    {% elif ph.status == 'pending' %}
+      <p class="mb-2">We are reviewing your profile. Customers will see it as soon as it is approved. You can still edit it while you wait.</p>
+    {% elif ph.status == 'approved' %}
+      <p class="mb-2">Your profile is live. Customers can find you and book you. Changes you save appear straight away.</p>
+    {% elif ph.status == 'rejected' %}
+      <div class="alert alert-danger mb-3"><strong>Not approved yet.</strong><br>{{ ph.rejection_reason|linebreaksbr }}</div>
+      <p class="mb-2">Fix the points above, then submit again.</p>
+    {% endif %}
+
+    {% if ph.status != 'approved' %}
+    <ul class="checklist list-unstyled mt-3 mb-3">
+      {% for label, ok in checklist %}<li>{% if ok %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<i class="bi bi-circle text-muted"></i>{% endif %} {{ label }}{% if forloop.last %} <span class="muted">({{ photo_count }} added)</span>{% endif %}</li>{% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if ph.status == 'draft' or ph.status == 'rejected' %}
+    <form method="post" action="{% url 'pro_submit' %}">{% csrf_token %}
+      <button class="btn btn-primary" type="submit" {% if not ready %}disabled{% endif %}>{% if ph.status == 'rejected' %}Submit again for review{% else %}Submit for review{% endif %}</button>
+      {% if not ready %}<span class="small muted ms-2">Complete the checklist to enable this.</span>{% endif %}
+    </form>
+    {% endif %}
+  </div>
+
+  {% if ph.status == 'approved' or requests or awaiting_payment or to_complete or upcoming or history %}
+  {% if requests %}<h2 class="mb-3" style="font-size:1.5rem">New requests <span class="muted">({{ requests|length }})</span></h2>
+    {% for b in requests %}{% include 'photopholio/_pro_booking.html' %}{% endfor %}{% endif %}
+  {% if to_complete %}<h2 class="mt-4 mb-3" style="font-size:1.5rem">Ready to mark completed</h2>
+    {% for b in to_complete %}{% include 'photopholio/_pro_booking.html' %}{% endfor %}{% endif %}
+  {% if awaiting_payment %}<h2 class="mt-4 mb-3" style="font-size:1.5rem">Accepted, waiting for payment</h2>
+    {% for b in awaiting_payment %}{% include 'photopholio/_pro_booking.html' %}{% endfor %}{% endif %}
+  {% if upcoming %}<h2 class="mt-4 mb-3" style="font-size:1.5rem">Upcoming (paid)</h2>
+    {% for b in upcoming %}{% include 'photopholio/_pro_booking.html' %}{% endfor %}{% endif %}
+  {% if history %}<h2 class="mt-4 mb-3" style="font-size:1.5rem">Past bookings</h2>
+    {% for b in history %}{% include 'photopholio/_pro_booking.html' %}{% endfor %}{% endif %}
+  {% if not requests and not to_complete and not awaiting_payment and not upcoming and not history %}
+  <div class="panel text-center"><h3>No bookings yet</h3><p class="muted mb-0">Requests will appear here as soon as a customer asks for a date.</p></div>
+  {% endif %}
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

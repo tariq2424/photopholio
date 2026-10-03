@@ -105,3 +105,23 @@ a{text-underline-offset:3px}
 .pagination .active .page-link{background:var(--indigo);border-color:var(--indigo);color:#fff}
 footer.site-footer{border-top:1px solid var(--line);background:var(--card);padding:2.2rem 0;margin-top:2.5rem}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* roles, photographer area */
+.role-options{display:grid;gap:.6rem}
+.role-card{display:flex;align-items:center;gap:.7rem;border:1px solid #d5d9df;border-radius:12px;padding:.8rem 1rem;cursor:pointer;background:var(--card);font-weight:600}
+.role-card:has(input:checked){border-color:var(--indigo);background:#eef0fb;box-shadow:0 0 0 .15rem rgba(47,63,158,.14)}
+.role-card input{accent-color:var(--indigo);width:1.1rem;height:1.1rem}
+.pstatus{display:inline-block;padding:.25rem .8rem;border-radius:999px;font-weight:700;font-size:.85rem}
+.pstatus-draft{background:#eceef1;color:#4b5563}.pstatus-pending{background:#fff1cc;color:#7a5400}
+.pstatus-approved{background:#d9f2e3;color:#146336}.pstatus-rejected{background:#fde2e4;color:#9b1c28}
+.checklist li{padding:.15rem 0}
+.thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:.6rem;margin-top:.8rem}
+.thumb{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:#e4e7ec}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb form{position:absolute;top:.3rem;right:.3rem}
+.thumb-x{border:0;width:1.7rem;height:1.7rem;border-radius:50%;background:rgba(28,34,48,.8);color:#fff;font-size:1.1rem;line-height:1;cursor:pointer}
+
+/* booking flow */
+.status-accepted{background:#e0f2fe;color:#075985}
+.status-declined{background:#fde2e4;color:#9b1c28}
+.refund-note{font-size:.85rem;margin-top:.15rem}

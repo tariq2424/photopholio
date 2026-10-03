@@ -1,0 +1,18 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<div class="card card-body" style="max-width:720px">
+  <p>You are rejecting <strong>{{ queryset.count }}</strong> profile{{ queryset.count|pluralize }}:</p>
+  <ul>{% for p in queryset %}<li>{{ p.name }}</li>{% endfor %}</ul>
+  <form method="post">{% csrf_token %}
+    <input type="hidden" name="action" value="reject_selected">
+    {% for p in queryset %}<input type="hidden" name="{{ action_checkbox_name }}" value="{{ p.pk }}">{% endfor %}
+    <label for="reason"><strong>Reason shown to the photographer</strong></label>
+    <textarea id="reason" name="reason" class="form-control" rows="4" required
+      placeholder="e.g. Please add at least 4 photos of your own work and a longer bio."></textarea>
+    <div class="mt-3">
+      <button type="submit" name="apply" value="1" class="btn btn-danger">Reject</button>
+      <a href="{% url 'admin:photopholio_photographer_changelist' %}" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
