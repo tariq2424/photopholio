@@ -1,0 +1,22 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}Reviews{% endblock %}
+{% block content %}
+<div class="container section" style="max-width:820px">
+  <a class="small" href="{% url 'pro_dashboard' %}">&larr; Dashboard</a>
+  <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-1 mt-2">Reviews</h1>
+  <p class="muted mb-4">Reply once and your answer shows under the review on your public page. Keep it short and friendly. You can edit it any time.</p>
+  {% for r in reviews %}
+  <div class="panel mb-3">
+    <div class="d-flex justify-content-between"><strong>{{ r.user.first_name|default:r.user.username }}</strong><span class="rating"><i class="bi bi-star-fill"></i> {{ r.rating|floatformat:1 }}</span></div>
+    <p class="mb-1">{{ r.comment }}</p><small class="muted">{{ r.review_date|date:"j F Y" }}</small>
+    <form method="post" action="{% url 'pro_review_reply' r.pk %}" class="mt-3">{% csrf_token %}
+      <label class="form-label small" for="reply{{ r.pk }}">{% if r.reply %}Your reply{% else %}Write a reply{% endif %}</label>
+      <textarea class="form-control mb-2" id="reply{{ r.pk }}" name="reply" rows="2" maxlength="600" required>{{ r.reply }}</textarea>
+      <button class="btn btn-outline-dark btn-sm" type="submit">{% if r.reply %}Update reply{% else %}Post reply{% endif %}</button>
+    </form>
+  </div>
+  {% empty %}
+  <div class="panel text-center"><h3>No reviews yet</h3><p class="muted mb-0">Reviews appear here after a customer's booking is completed.</p></div>
+  {% endfor %}
+</div>
+{% endblock %}

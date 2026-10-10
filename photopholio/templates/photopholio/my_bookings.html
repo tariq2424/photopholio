@@ -1,40 +1,52 @@
 {% extends 'photopholio/base.html' %}
 {% block title %}My bookings{% endblock %}
 {% block content %}
-<div class="container section" style="max-width:900px">
-  <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-1">My bookings</h1>
-  <p class="muted mb-4">The photographer accepts your request first, then you pay to confirm the date. <a href="{% url 'cancellation_policy' %}">Cancellation policy</a></p>
-  {% for b in bookings %}
-  <div class="booking">
-    <div class="date-badge"><b>{{ b.event_date|date:"j" }}</b><span>{{ b.event_date|date:"M Y" }}</span></div>
-    <div class="grow">
-      <h3 class="mb-0"><a href="{% url 'photographer_detail' b.photographer.slug %}" class="text-reset text-decoration-none">{{ b.photographer.name }}</a></h3>
-      <span class="muted small">{{ b.photographer.get_specialities_display }} in {{ b.photographer.city.name }} &nbsp;|&nbsp; &#8377;{{ b.amount }}{% if b.is_paid and b.status != 'cancelled' %} paid{% endif %}</span>
-      {% if b.tool %}<div class="small muted">Notes: {{ b.tool }}</div>{% endif %}
-      {% if b.status == 'pending' %}<div class="small muted">Waiting for {{ b.photographer.name }} to accept. You will not be charged until they do.</div>{% endif %}
-      {% if b.status == 'accepted' %}<div class="small"><strong>Accepted.</strong> Pay by {{ b.payment_deadline|date:"j M, g:i a" }} to confirm your date.</div>{% endif %}
-      {% if b.status == 'cancelled' or b.status == 'declined' %}
-        <div class="small muted">
-          {% if b.cancel_reason %}{{ b.cancel_reason }}{% elif b.status == 'declined' %}The photographer could not take this date.{% endif %}
-          {% if b.cancelled_by == 'photographer' and b.status == 'cancelled' %}(cancelled by the photographer){% endif %}
-        </div>
-        {% with pay=b.paid_payment %}{% if pay %}
-          <div class="refund-note">
-            {% if pay.refund_amount %}Refund of &#8377;{{ pay.refund_amount }}: <strong>{{ pay.get_refund_status_display }}</strong>{% if pay.refunded_at %} on {{ pay.refunded_at|date:"j M Y" }}{% endif %}
-            {% else %}No refund under the cancellation policy.{% endif %}
-          </div>
-        {% endif %}{% endwith %}
-      {% endif %}
-    </div>
-    <span class="status status-{{ b.status }}">{{ b.get_status_display }}</span>
-    <div class="d-flex gap-2 flex-wrap">
-      {% if b.status == 'accepted' %}<a class="btn btn-primary btn-sm" href="{% url 'payment' b.pk %}">Pay now</a>{% endif %}
-      {% if b.can_review %}<a class="btn btn-amber btn-sm" href="{% url 'feedback_create' b.pk %}">Write a review</a>{% endif %}
-      {% if b.status == 'pending' or b.status == 'accepted' or b.status == 'confirmed' %}<a class="btn btn-outline-dark btn-sm" href="{% url 'booking_cancel' b.pk %}">Cancel</a>{% endif %}
-    </div>
+<div class="container section" style="max-width:940px">
+  <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-1">Hi {{ user.first_name|default:user.username }}</h1>
+  <p class="muted mb-4">Everything about your shoots, in one place. <a href="{% url 'cancellation_policy' %}">Cancellation policy</a></p>
+
+  {% if total %}
+  <div class="stat-row">
+    <div class="stat"><span>Next shoot</span><strong>{% if next_shoot %}{{ next_shoot.event_date|date:"j M" }}{% else %}None yet{% endif %}</strong>{% if next_shoot %}<small>{{ next_shoot.photographer.name }}</small>{% endif %}</div>
+    <div class="stat"><span>Waiting for you</span><strong>{{ to_pay|length }}</strong><small>{% if to_pay %}to pay{% else %}nothing to pay{% endif %}</small></div>
+    <div class="stat"><span>You've spent</span><strong>&#8377;{{ spent }}</strong>{% if refund_waiting %}<small>&#8377;{{ refund_waiting }} refund on its way</small>{% endif %}</div>
+    <a class="stat stat-link" href="{% url 'my_favourites' %}"><span>Saved</span><strong>{{ saved_count }}</strong><small>photographer{{ saved_count|pluralize }}</small></a>
   </div>
-  {% empty %}
-  <div class="panel text-center"><h3>You haven't booked anyone yet</h3><p class="muted">Find a photographer you like and send a request for your date.</p><a class="btn btn-primary" href="{% url 'photographer_list' %}">Browse photographers</a></div>
-  {% endfor %}
+  {% endif %}
+
+  {% if to_pay %}<h2 class="sec-title">Pay to lock your date</h2>
+    {% for b in to_pay %}{% include 'photopholio/_my_booking.html' %}{% endfor %}{% endif %}
+  {% if upcoming %}<h2 class="sec-title">Coming up</h2>
+    {% for b in upcoming %}{% include 'photopholio/_my_booking.html' %}{% endfor %}{% endif %}
+  {% if waiting %}<h2 class="sec-title">Waiting for a reply</h2>
+    {% for b in waiting %}{% include 'photopholio/_my_booking.html' %}{% endfor %}{% endif %}
+  {% if past %}<h2 class="sec-title">Past and closed</h2>
+    {% for b in past %}{% include 'photopholio/_my_booking.html' %}{% endfor %}{% endif %}
+
+  {% if not total %}
+  <div class="panel text-center"><h3>No bookings yet</h3><p class="muted">Find a photographer you like and ask for your date. You only pay once they say yes.</p><a class="btn btn-primary" href="{% url 'photographer_list' %}">Browse photographers</a></div>
+  {% endif %}
+
+  {% if payments %}
+  <h2 class="sec-title">Payments</h2>
+  <div class="panel p-0 table-responsive">
+    <table class="table align-middle mb-0">
+      <thead><tr><th>Date</th><th>Photographer</th><th class="text-end">Paid</th><th>Refund</th></tr></thead>
+      <tbody>
+      {% for pay in payments %}
+        <tr>
+          <td>{{ pay.payment_date|date:"j M Y" }}</td>
+          <td>{{ pay.booking.photographer.name }}<div class="small muted">for {{ pay.booking.event_date|date:"j M Y" }}</div></td>
+          <td class="text-end">&#8377;{{ pay.amount }}</td>
+          <td>{% if pay.refund_status == 'refunded' %}&#8377;{{ pay.refund_amount }} sent back{% if pay.refunded_at %} on {{ pay.refunded_at|date:"j M" }}{% endif %}
+              {% elif pay.refund_status == 'pending' %}&#8377;{{ pay.refund_amount }} on its way
+              {% elif pay.booking.status == 'cancelled' %}<span class="muted">No refund</span>
+              {% else %}<span class="muted">&mdash;</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

@@ -21,10 +21,23 @@ book an event date, pay (demo checkout) and leave reviews. Built from my GTU sum
 - Two account types chosen at signup: customers (book) and photographers (list their work). Each has its own login page
 - Photographer area: create a profile, manage portfolios and photos, see bookings, submit for review
 - Admin approval: a photographer's profile stays hidden from customers until an admin approves it (with a reject reason the photographer can read)
+- Emails for every booking step, approval and refund (printed in the terminal until real email settings are added)
+- Forgot password with an emailed reset link
+- Admin analytics page at `/admin/analytics/`: revenue, bookings per month, approvals and refunds waiting, top photographers
+- Availability calendar on every photographer page (green = free, click a day to fill in the booking). Photographers block days they cannot work
+- Search by date: only photographers who are free on that day are shown (home page and the filters)
+- Packages: photographers can offer Basic, Standard and Premium. The customer picks one when booking and the booking keeps that price, even if the photographer changes the package later
+- `python manage.py add_sample_packages` gives photographers without packages a starting set (easy to edit)
+- Rescheduling: once a request is accepted, the customer can ask to move it to another free day (event at least 2 days away, once per booking). The photographer accepts or declines; the price and payment stay the same, and until accepted the old date is kept
+- Saved photographers (wishlist): customers tap the heart on a card or profile and find them under Saved photographers
+- Verified badge: the admin can give or remove it (Photographers > Actions); customers can filter by Verified only
+- Review replies: a photographer answers each review once (editable) and it shows on the public page; the admin can hide a review, which also removes it from the rating
+- Photo delivery: after a booking is completed the photographer pastes a link (Drive, Dropbox, anything https) and the customer sees "Open your photos"
+- My bookings is now a small dashboard: next shoot, what to pay, refunds on the way, payment history
 - Contact form; user profile with photo upload
 - Customised admin (Jazzmin): filters, search, inline editing, image previews, "mark completed" action
 - Responsive UI (Bootstrap 5), keyboard-focus styles, reduced-motion support
-- 39 automated tests
+- 70 automated tests
 
 ## Tech stack
 Python 3.10+, Django 5.2, SQLite (PostgreSQL via `DATABASE_URL`), Pillow, Bootstrap 5, WhiteNoise, Gunicorn.
@@ -79,3 +92,9 @@ photopholio/
   management/commands/seed_demo.py   demo data generator
   tests.py              automated tests
 ```
+
+## Email settings
+Without settings, emails are printed in the terminal that runs the server. For real emails set these environment variables:
+`EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` (a Gmail App Password), and `SITE_URL` (for example `https://yourname.pythonanywhere.com`).
+Check it with `python manage.py send_test_email you@example.com`. A failed email never stops a booking or payment.
+`python manage.py expire_bookings` cancels accepted bookings that were not paid within 24 hours (optional daily task).

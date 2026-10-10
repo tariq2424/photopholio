@@ -1,4 +1,5 @@
-<a class="pcard" href="{% url 'photographer_detail' p.slug %}">
+<div class="pcard-wrap">
+<a class="pcard" href="{% url 'photographer_detail' p.slug %}{% if wanted_date %}?date={{ wanted_date|date:'Y-m-d' }}{% endif %}">
   <div class="pcard-media">
     {% if p.image %}<img src="{{ p.image.url }}" alt="{{ p.name }}" loading="lazy">
     {% else %}{% with cover=p.cover %}
@@ -10,10 +11,12 @@
   </div>
   <div class="pcard-body">
     <div class="d-flex justify-content-between align-items-baseline gap-2">
-      <h3>{{ p.name }}</h3>
+      <h3>{{ p.name }}{% if p.is_verified %} <i class="bi bi-patch-check-fill verified" title="Verified by PhotoPholio" aria-label="Verified"></i>{% endif %}</h3>
       {% if p.rating %}<span class="rating"><i class="bi bi-star-fill"></i> {{ p.rating|floatformat:1 }}</span>{% else %}<span class="muted small">New</span>{% endif %}
     </div>
     <div class="pcard-meta"><span><i class="bi bi-geo-alt"></i> {{ p.city.name }}</span><span>{{ p.experience_years }} yrs experience</span></div>
-    <div class="pcard-price">&#8377;{{ p.price_per_day }} <span>/ day</span></div>
+    <div class="pcard-price">{% if p.active_packages %}From &#8377;{{ p.starting_price }}{% else %}&#8377;{{ p.price_per_day }} <span>/ day</span>{% endif %}</div>
   </div>
 </a>
+{% if show_hearts %}{% include 'photopholio/_heart.html' %}{% endif %}
+</div>

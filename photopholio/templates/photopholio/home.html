@@ -12,6 +12,8 @@
           <select class="form-select" name="city" aria-label="City"><option value="">Any city</option>{% for c in cities %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select>
           <span class="divider"></span>
           <select class="form-select" name="speciality" aria-label="Style"><option value="">Any style</option>{% for v,l in specialities %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select>
+          <span class="divider"></span>
+          <input class="form-control" type="date" name="date" min="{{ today }}" aria-label="Free on this date" title="Only show photographers who are free on this date">
           <button class="btn btn-primary" type="submit">Find photographers</button>
         </form>
         <p class="small muted mt-3 mb-0">{{ photographer_count }} photographer{{ photographer_count|pluralize }} in {{ city_count }} cit{{ city_count|pluralize:"y,ies" }}.</p>

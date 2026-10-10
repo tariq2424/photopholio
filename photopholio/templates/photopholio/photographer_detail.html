@@ -14,18 +14,39 @@
       <div class="profile-head">
         {% if p.image %}<img class="avatar" src="{{ p.image.url }}" alt="{{ p.name }}">{% else %}<div class="avatar" aria-hidden="true">{{ p.initials }}</div>{% endif %}
         <div>
-          <h1 style="font-size:clamp(2.2rem,5vw,3.2rem)">{{ p.name }}</h1>
+          <h1 style="font-size:clamp(2.2rem,5vw,3.2rem)">{{ p.name }}{% if p.is_verified %} <i class="bi bi-patch-check-fill verified" style="font-size:.5em;vertical-align:middle" title="Verified by PhotoPholio" aria-label="Verified"></i>{% endif %}</h1>
           <p class="muted mb-0"><i class="bi bi-camera"></i> {{ p.get_specialities_display }} &nbsp; <i class="bi bi-geo-alt"></i> {{ p.city.name }}, {{ p.city.state.name }}</p>
+          {% if p.is_verified %}<span class="verified-pill"><i class="bi bi-patch-check-fill"></i> Verified by PhotoPholio</span>{% endif %}
         </div>
+        {% if can_book and p.status == 'approved' %}<div class="ms-lg-auto">{% include 'photopholio/_save_button.html' %}</div>{% endif %}
       </div>
       <div class="facts">
         <div><strong>{% if p.rating %}<i class="bi bi-star-fill" style="color:var(--amber)"></i> {{ p.rating|floatformat:1 }}{% else %}New{% endif %}</strong><span>{{ reviews|length }} review{{ reviews|length|pluralize }}</span></div>
         <div><strong>{{ p.experience_years }} years</strong><span>shooting professionally</span></div>
-        <div><strong>&#8377;{{ p.price_per_day }}</strong><span>for a full day</span></div>
+        {% if packages %}<div><strong>&#8377;{{ p.starting_price }}</strong><span>starting price</span></div>{% else %}<div><strong>&#8377;{{ p.price_per_day }}</strong><span>for a full day</span></div>{% endif %}
       </div>
 
       <h2 class="mt-5 mb-2" style="font-size:1.8rem">About {{ p.name.split.0 }}</h2>
       <p class="measure">{{ p.bio }}</p>
+
+      {% if packages %}
+      <h2 class="mt-5 mb-3" style="font-size:1.8rem" id="packages">Packages</h2>
+      <div class="pkg-grid">
+        {% for pk in packages %}
+        <div class="pkg">
+          <div class="pkg-tier">{{ pk.get_tier_display }}</div>
+          <div class="pkg-price">&#8377;{{ pk.price }}</div>
+          <ul class="pkg-list"><li>{{ pk.hours }} hour{{ pk.hours|pluralize }} of coverage</li><li>{{ pk.edited_photos }} edited photos</li></ul>
+          {% if pk.description %}<p class="small muted mb-3">{{ pk.description }}</p>{% endif %}
+          {% if can_book %}<button type="button" class="btn btn-outline-dark btn-sm w-100 mt-auto" data-package="{{ pk.pk }}">Choose {{ pk.get_tier_display }}</button>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <h2 class="mt-5 mb-2" style="font-size:1.8rem" id="availability">Availability</h2>
+      <p class="muted small mb-3">Green days are free.{% if can_book %} Click one to fill in your booking date.{% endif %}</p>
+      {% include 'photopholio/_calendar.html' with months=calendar_months pick=can_book %}
 
       <h2 class="mt-5 mb-3" style="font-size:1.8rem">Portfolio</h2>
       {% for pf in portfolios %}
@@ -46,6 +67,7 @@
         <div class="review">
           <div class="d-flex justify-content-between"><strong>{{ r.user.first_name|default:r.user.username }}</strong><span class="rating"><i class="bi bi-star-fill"></i> {{ r.rating|floatformat:1 }}</span></div>
           <p class="mb-1">{{ r.comment }}</p><small class="muted">{{ r.review_date|date:"j F Y" }}</small>
+          {% if r.reply %}<div class="reply"><strong>{{ p.name.split.0 }} replied</strong><p class="mb-0">{{ r.reply }}</p></div>{% endif %}
         </div>
       {% empty %}<p class="muted">No reviews yet. They show up here after a booking is completed.</p>{% endfor %}
     </div>
@@ -53,7 +75,7 @@
     <aside class="col-lg-4">
       <div class="book-card" id="book">
         <h2 style="font-size:1.7rem">Book {{ p.name.split.0 }}</h2>
-        <p class="mb-3"><strong class="fs-4">&#8377;{{ p.price_per_day }}</strong> <span class="muted">per day</span></p>
+        {% if packages %}<p class="mb-3"><span class="muted">From</span> <strong class="fs-4">&#8377;{{ p.starting_price }}</strong></p>{% else %}<p class="mb-3"><strong class="fs-4">&#8377;{{ p.price_per_day }}</strong> <span class="muted">per day</span></p>{% endif %}
         {% if p.status != 'approved' %}
           <div class="alert alert-secondary mb-0">Customers can book this photographer once the profile is approved.</div>
         {% elif role == 'photographer' %}
@@ -63,8 +85,14 @@
         {% else %}
         <form method="post" novalidate>{% csrf_token %}
           {% for f in form %}
+            {% if f.name == 'package' %}
+            <div class="mb-3"><span class="form-label d-block">Package</span>
+              {% for radio in f %}<label class="pkg-option" for="{{ radio.id_for_label }}">{{ radio.tag }}<span>{{ radio.choice_label }}</span></label>{% endfor %}
+              {% for e in f.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}</div>
+            {% else %}
             <div class="mb-3"><label class="form-label" for="{{ f.id_for_label }}">{{ f.label }}</label>{{ f }}
               {% for e in f.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}</div>
+            {% endif %}
           {% endfor %}
           <button class="btn btn-primary w-100 py-2" type="submit">{% if user.is_authenticated %}Send booking request{% else %}Log in to book{% endif %}</button>
           <p class="small muted mt-2 mb-0">You pay only after {{ p.name.split.0 }} accepts. <a href="{% url 'cancellation_policy' %}">Cancellation policy</a></p>
@@ -75,7 +103,7 @@
   </div>
 </div>
 
-{% if can_book %}<div class="book-bar d-lg-none"><span><strong>&#8377;{{ p.price_per_day }}</strong> <span class="muted">/ day</span></span><a class="btn btn-primary" href="#book">Book</a></div>{% endif %}
+{% if can_book %}<div class="book-bar d-lg-none"><span>{% if packages %}<span class="muted">From</span> <strong>&#8377;{{ p.starting_price }}</strong>{% else %}<strong>&#8377;{{ p.price_per_day }}</strong> <span class="muted">/ day</span>{% endif %}</span><a class="btn btn-primary" href="#book">Book</a></div>{% endif %}
 
 <div class="modal fade" id="lightbox" tabindex="-1" aria-label="Photo viewer" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-centered"><div class="modal-content bg-dark text-white border-0">
@@ -83,4 +111,28 @@
     <div class="modal-body pt-0"><img id="lightboxImg" class="img-fluid w-100" alt=""></div>
   </div></div>
 </div>
+<script>
+// Clicking a free day in the calendar fills in the booking date and takes you to the form.
+document.querySelectorAll('[data-package]').forEach(function (button) {
+  button.addEventListener('click', function () {
+    var radio = document.querySelector('input[name="package"][value="' + button.getAttribute('data-package') + '"]');
+    if (!radio) { return; }
+    radio.checked = true;
+    var card = document.getElementById('book');
+    if (card) { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+  });
+});
+document.querySelectorAll('.cal-day.free[data-date]').forEach(function (day) {
+  day.addEventListener('click', function () {
+    var input = document.getElementById('id_event_date');
+    if (!input) { return; }
+    input.value = day.getAttribute('data-date');
+    document.querySelectorAll('.cal-day.picked').forEach(function (d) { d.classList.remove('picked'); });
+    day.classList.add('picked');
+    var card = document.getElementById('book');
+    if (card) { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+    input.focus();
+  });
+});
+</script>
 {% endblock %}

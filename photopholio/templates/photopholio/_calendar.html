@@ -1,0 +1,22 @@
+{# months = availability.months(...); pick = customers may click a free day; private = photographer's own view #}
+<div class="cal-wrap">
+  {% for month in months %}
+  <div class="cal-month">
+    <h3 class="cal-title">{{ month.label }}</h3>
+    <div class="cal-grid">
+      {% for name in "MTWTFSS" %}<span class="cal-head" aria-hidden="true">{{ name }}</span>{% endfor %}
+      {% for week in month.weeks %}{% for c in week %}
+        {% if not c.in_month %}<span class="cal-day empty"></span>
+        {% elif c.state == 'free' and pick %}<button type="button" class="cal-day free" data-date="{{ c.date|date:'Y-m-d' }}" title="Free. Click to pick this day" aria-label="{{ c.date|date:'j F' }}, free">{{ c.day }}</button>
+        {% else %}<span class="cal-day {{ c.state }}"{% if c.note %} title="{{ c.note }}"{% endif %} aria-label="{{ c.date|date:'j F' }}, {% if c.state == 'free' %}free{% elif c.state == 'past' %}past{% else %}not available{% endif %}">{{ c.day }}</span>
+        {% endif %}
+      {% endfor %}{% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+<div class="cal-legend">
+  <span><i class="cal-key free"></i> Free</span>
+  <span><i class="cal-key booked"></i> Not available</span>
+  {% if private %}<span><i class="cal-key blocked"></i> Blocked by you</span>{% endif %}
+</div>

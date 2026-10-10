@@ -1,0 +1,9 @@
+{# Needs: p (photographer), fav_ids. Logged-out visitors are sent to log in and come back here. #}
+{% if user.is_authenticated %}
+<form method="post" action="{% url 'favourite_toggle' p.slug %}" class="heart-form">{% csrf_token %}
+  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <button type="submit" class="heart{% if p.pk in fav_ids %} on{% endif %}" aria-pressed="{% if p.pk in fav_ids %}true{% else %}false{% endif %}" title="{% if p.pk in fav_ids %}Remove from saved{% else %}Save for later{% endif %}" aria-label="{% if p.pk in fav_ids %}Remove {{ p.name }} from saved{% else %}Save {{ p.name }} for later{% endif %}"><i class="bi {% if p.pk in fav_ids %}bi-heart-fill{% else %}bi-heart{% endif %}"></i></button>
+</form>
+{% else %}
+<a class="heart heart-link" href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}" title="Log in to save" aria-label="Log in to save {{ p.name }}"><i class="bi bi-heart"></i></a>
+{% endif %}

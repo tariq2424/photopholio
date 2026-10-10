@@ -1,0 +1,13 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}Saved photographers{% endblock %}
+{% block content %}
+<div class="container section">
+  <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-1">Saved photographers</h1>
+  <p class="muted mb-4">The ones you wanted to come back to.</p>
+  {% if photographers %}
+  <div class="grid-cards">{% for p in photographers %}{% include 'photopholio/_card.html' %}{% endfor %}</div>
+  {% else %}
+  <div class="panel text-center"><h3>Nothing saved yet</h3><p class="muted">Tap the heart on a photographer and they will show up here.</p><a class="btn btn-primary" href="{% url 'photographer_list' %}">Browse photographers</a></div>
+  {% endif %}
+</div>
+{% endblock %}

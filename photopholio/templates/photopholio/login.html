@@ -9,13 +9,67 @@
       {% if login_role == 'photographer' %}You will land on your dashboard.{% else %}Photographers land on their dashboard after logging in.{% endif %}</p>
   </div>
   <div class="panel">
-    <form method="post" novalidate>{% csrf_token %}
+    <form method="post" id="login-form" novalidate>{% csrf_token %}
       <input type="hidden" name="next" value="{{ next }}">
-      {% include 'photopholio/_form_fields.html' %}
-      <button class="btn btn-primary w-100 py-2" type="submit">Log in</button>
+
+      {% if form.locked_seconds %}
+      <div id="lock-box" class="alert alert-danger" role="status" aria-live="polite" data-seconds="{{ form.locked_seconds }}">
+        <strong>Too many wrong attempts.</strong>
+        <span id="lock-static">This login is locked for about {{ form.locked_minutes }} more minute{{ form.locked_minutes|pluralize }}.
+          Please try again after that, or use &ldquo;Forgot your password?&rdquo;.</span>
+        <span id="lock-live" hidden>Please wait <b id="lock-time" aria-hidden="true"></b> before trying again, or use &ldquo;Forgot your password?&rdquo;.</span>
+      </div>
+      {% else %}
+      {% for e in form.non_field_errors %}<div class="alert alert-danger">{{ e }}</div>{% endfor %}
+      {% endif %}
+
+      {% for f in form %}
+        <div class="mb-3">
+          <label class="form-label" for="{{ f.id_for_label }}">{{ f.label }}</label>{{ f }}
+          {% for e in f.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+        </div>
+      {% endfor %}
+      <button class="btn btn-primary w-100 py-2" type="submit" id="login-button">Log in</button>
     </form>
+    <p class="mt-3 mb-0 small"><a href="{% url 'password_reset' %}">Forgot your password?</a></p>
     <p class="mt-3 mb-1 muted">No account yet? <a href="{% url 'register' %}">Create one</a>
       &middot; <a href="{% url 'register' %}?role=photographer">Join as a photographer</a></p>
   </div>
 </div></div>
+
+{% if form.locked_seconds %}
+<script>
+// Live countdown. When it reaches zero the message changes and the button opens up, with no page refresh.
+(function () {
+  var box = document.getElementById('lock-box');
+  var button = document.getElementById('login-button');
+  var shown = document.getElementById('lock-time');
+  var staticText = document.getElementById('lock-static');
+  var liveText = document.getElementById('lock-live');
+  if (!box || !button || !shown || !staticText || !liveText) { return; }
+  staticText.hidden = true;   // the plain sentence is only for browsers without JavaScript
+  liveText.hidden = false;
+  var endsAt = Date.now() + parseInt(box.getAttribute('data-seconds'), 10) * 1000;
+  function mmss(total) {
+    var m = Math.floor(total / 60), s = total % 60;
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+  function tick() {
+    var left = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+    if (left > 0) {
+      shown.textContent = mmss(left);
+      button.disabled = true;
+      setTimeout(tick, 250);
+      return;
+    }
+    box.className = 'alert alert-success';
+    box.innerHTML = '<strong>You can log in now.</strong> Type your password and try again.';
+    button.disabled = false;
+    var password = document.getElementById('id_password');
+    if (password) { password.focus(); }
+  }
+  tick();
+})();
+</script>
+{% endif %}
 {% endblock %}

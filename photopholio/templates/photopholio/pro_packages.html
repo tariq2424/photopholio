@@ -1,0 +1,37 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}Packages{% endblock %}
+{% block content %}
+<div class="container section">
+  <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-1">Packages</h1>
+  <p class="muted mb-4 measure">Offer up to three packages. Customers pick one when they book. If you offer none, customers book your full-day rate of &#8377;{{ ph.price_per_day }}.
+    A booking keeps the price it was made at, so changing or removing a package never changes bookings that already exist.
+    <a href="{% url 'pro_dashboard' %}">Back to dashboard</a></p>
+  <div class="row g-4">
+    {% for row in rows %}
+    <div class="col-lg-4">
+      <div class="panel h-100">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h3 class="mb-0">{{ row.label }}</h3>
+          {% if row.package %}{% if row.package.is_active %}<span class="status status-confirmed">Offered</span>{% else %}<span class="status status-cancelled">Hidden</span>{% endif %}{% else %}<span class="muted small">Not offered</span>{% endif %}
+        </div>
+        <form method="post" novalidate>{% csrf_token %}<input type="hidden" name="tier" value="{{ row.tier }}">
+          {% for e in row.form.non_field_errors %}<div class="alert alert-danger">{{ e }}</div>{% endfor %}
+          {% for f in row.form %}
+            <div class="mb-3">
+              {% if f.field.widget.input_type == 'checkbox' %}<div class="form-check">{{ f }}<label class="form-check-label" for="{{ f.id_for_label }}">{{ f.label }}</label></div>
+              {% else %}<label class="form-label" for="{{ f.id_for_label }}">{{ f.label }}</label>{{ f }}{% endif %}
+              {% for e in f.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+            </div>
+          {% endfor %}
+          <button class="btn btn-primary w-100" type="submit" name="action" value="save">{% if row.package %}Save {{ row.label }}{% else %}Add {{ row.label }}{% endif %}</button>
+        </form>
+        {% if row.package %}
+        <form method="post" class="mt-2" onsubmit="return confirm('Remove this package? Bookings already made keep their price.')">{% csrf_token %}<input type="hidden" name="tier" value="{{ row.tier }}">
+          <button class="btn btn-outline-danger btn-sm w-100" type="submit" name="action" value="remove">Remove</button></form>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

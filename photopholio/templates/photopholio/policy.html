@@ -3,7 +3,7 @@
 {% block content %}
 <div class="container section" style="max-width:760px">
   <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-3">Cancellation policy</h1>
-  <p class="muted measure">Short and simple. This is a demo platform, so no real money moves, but the rules below are exactly what the app applies.</p>
+  <p class="muted measure">Plain rules, no fine print. PhotoPholio is a demo, so no real money moves, but the app follows exactly what is written here.</p>
 
   <h2 class="mt-4 mb-3" style="font-size:1.6rem">How a booking works</h2>
   <ol>
@@ -19,6 +19,9 @@
     <tbody>{% for label, percent in rows %}<tr><td>{{ label }}</td><td class="text-end"><strong>{{ percent }}%</strong></td></tr>{% endfor %}</tbody>
   </table>
   <p class="small muted">Days are counted from the day you cancel to the event date.</p>
+
+  <h2 class="mt-4 mb-3" style="font-size:1.6rem">Changing your date</h2>
+  <p>Need a different day? Once the photographer has accepted, you can ask to move your booking, as long as the shoot is <strong>{{ resched_days }} or more days away</strong>. They need to agree and be free on the new day. Your price and payment stay as they are, and a booking can be moved <strong>{{ resched_max }} time{{ resched_max|pluralize }}</strong>. If they say no, you keep your original date. If you cancel later, the refund is worked out from the date your booking has then.</p>
 
   <h2 class="mt-4 mb-3" style="font-size:1.6rem">If the photographer cancels</h2>
   <p>You get a <strong>100% refund</strong>, whatever the date. Every cancellation by a photographer is recorded and reviewed by the admin.</p>

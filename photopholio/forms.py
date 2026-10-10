@@ -1,13 +1,18 @@
+from datetime import timedelta
 from django import forms
-from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
+from django.contrib.auth.forms import (AuthenticationForm, PasswordResetForm, SetPasswordForm,
+                                       UserCreationForm)
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import UploadedFile
 from django.utils import timezone
 
-from .models import (Booking, City, ContactUs, Feedback, Payment, Photo, Photographer,
+from . import availability
+from .models import (BlockedDate, Booking, City, ContactUs, Feedback, Package, Payment, Photo, Photographer,
                      Portfolio, State, UserProfile)
 from .accounts import authenticate_identifier
 from .roles import get_role
+from . import throttle
+from .throttle import ThrottledLoginMixin
 
 
 class BootstrapMixin:
@@ -70,10 +75,20 @@ class ProfileForm(BootstrapMixin, forms.ModelForm):
         }
 
 
+class PackageChoice(forms.ModelChoiceField):
+    def label_from_instance(self, package):
+        return f"{package.get_tier_display()}: \u20b9{package.price} ({package.hours} h, {package.edited_photos} photos)"
+
+
 class BookingForm(BootstrapMixin, forms.ModelForm):
+    # Shown only when the photographer has packages. Without any, the booking is for the plain day rate.
+    package = PackageChoice(queryset=Package.objects.none(), widget=forms.RadioSelect, empty_label=None,
+                            label="Package", error_messages={"required": "Please choose a package."})
+    field_order = ["event_date", "package", "tool"]
+
     class Meta:
         model = Booking
-        fields = ("event_date", "tool")
+        fields = ("event_date", "package", "tool")
         labels = {"event_date": "Event date", "tool": "Equipment or special requirements"}
         widgets = {
             "event_date": forms.DateInput(attrs={"type": "date"}),
@@ -85,6 +100,25 @@ class BookingForm(BootstrapMixin, forms.ModelForm):
         self.photographer = photographer
         self.user = user if (user is not None and user.is_authenticated) else None
         self.fields["event_date"].widget.attrs["min"] = timezone.localdate().isoformat()
+        offered = photographer.active_packages if photographer else []
+        if offered:
+            self.fields["package"].queryset = Package.objects.filter(pk__in=[p.pk for p in offered])
+            standard = next((p for p in offered if p.tier == "standard"), offered[0])
+            self.fields["package"].initial = standard.pk
+        else:
+            del self.fields["package"]
+
+    def save(self, commit=True):
+        """Copy the chosen package's name and price onto the booking (the snapshot)."""
+        booking = super().save(commit=False)
+        package = self.cleaned_data.get("package")
+        if package:
+            booking.package, booking.package_name, booking.price = package, package.get_tier_display(), package.price
+        else:
+            booking.package, booking.package_name, booking.price = None, "Full day", self.photographer.price_per_day
+        if commit:
+            booking.save()
+        return booking
 
     def clean_event_date(self):
         date = self.cleaned_data["event_date"]
@@ -99,6 +133,8 @@ class BookingForm(BootstrapMixin, forms.ModelForm):
         ).exists()
         if clash:
             raise forms.ValidationError("This photographer is already booked on that date. Try another day.")
+        if BlockedDate.objects.filter(photographer=self.photographer, date=date).exists():
+            raise forms.ValidationError("This photographer is not available on that date. Pick a green day in the calendar.")
         if self.user is not None and Booking.objects.filter(
                 user=self.user, photographer=self.photographer, event_date=date,
                 status__in=["pending", "accepted", "confirmed"]).exists():
@@ -129,7 +165,7 @@ class ContactForm(BootstrapMixin, forms.ModelForm):
         widgets = {"message": forms.Textarea(attrs={"rows": 5})}
 
 
-class SmartLoginForm(BootstrapMixin, AuthenticationForm):
+class IdentifierLoginForm(BootstrapMixin, AuthenticationForm):
     """
     One login for everybody: customers and photographers both use it.
     Accepts a username or an email, in any capitalisation. Where you land afterwards depends on your role.
@@ -155,6 +191,11 @@ class SmartLoginForm(BootstrapMixin, AuthenticationForm):
                 raise self.get_invalid_login_error()
             self.confirm_login_allowed(self.user_cache)
         return self.cleaned_data
+
+
+class SmartLoginForm(ThrottledLoginMixin, IdentifierLoginForm):
+    """The login form: username or email, and a lock after too many wrong passwords."""
+    throttle_policy = throttle.SITE  # 5 wrong passwords in 15 minutes -> locked for 5 minutes
 
 
 # Older names, kept so nothing that imports them breaks.
@@ -253,3 +294,89 @@ class PhotoUploadForm(BootstrapMixin, forms.ModelForm):
 class CancelReasonForm(BootstrapMixin, forms.Form):
     reason = forms.CharField(label="Reason (the customer will see this)", widget=forms.Textarea(attrs={"rows": 3}),
                              max_length=500)
+
+
+class RescheduleForm(BootstrapMixin, forms.Form):
+    new_date = forms.DateField(label="New date", widget=forms.DateInput(attrs={"type": "date"}))
+    reason = forms.CharField(label="Reason (optional, the photographer will see this)", required=False, max_length=255)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["new_date"].widget.attrs["min"] = (timezone.localdate() + timedelta(days=1)).isoformat()
+
+
+class ReplyForm(BootstrapMixin, forms.Form):
+    reply = forms.CharField(label="Your reply", max_length=600, widget=forms.Textarea(attrs={"rows": 3}))
+
+
+# --- Forgot password -----------------------------------------------------------
+
+class PasswordResetRequestForm(BootstrapMixin, PasswordResetForm):
+    email = forms.EmailField(max_length=254, label="Your email",
+                             widget=forms.EmailInput(attrs={"autocomplete": "email", "autofocus": True}))
+
+
+class NewPasswordForm(BootstrapMixin, SetPasswordForm):
+    pass
+
+
+class BlockDatesForm(BootstrapMixin, forms.Form):
+    MAX_DAYS = 90
+    start = forms.DateField(label="From", widget=forms.DateInput(attrs={"type": "date"}))
+    end = forms.DateField(label="To (leave empty for one day)", required=False, widget=forms.DateInput(attrs={"type": "date"}))
+    reason = forms.CharField(label="Reason (only you see this)", required=False, max_length=120,
+                             widget=forms.TextInput(attrs={"placeholder": "e.g. family wedding"}))
+
+    def __init__(self, *args, photographer=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.photographer = photographer
+        today = timezone.localdate().isoformat()
+        self.fields["start"].widget.attrs["min"] = today
+        self.fields["end"].widget.attrs["min"] = today
+
+    def clean(self):
+        cleaned = super().clean()
+        start = cleaned.get("start")
+        if not start:
+            return cleaned
+        end = cleaned.get("end") or start
+        if start < timezone.localdate():
+            raise forms.ValidationError("You can only block days from today onwards.")
+        if end < start:
+            raise forms.ValidationError("The end date cannot be before the start date.")
+        if (end - start).days >= self.MAX_DAYS:
+            raise forms.ValidationError(f"Block at most {self.MAX_DAYS} days at a time.")
+        taken = list(Booking.objects.filter(photographer=self.photographer, status__in=availability.BLOCKING_STATUSES,
+                                            event_date__range=(start, end)).order_by("event_date").values_list("event_date", flat=True))
+        if taken:
+            days = ", ".join(d.strftime("%d %b") for d in taken)
+            raise forms.ValidationError(f"You already have a booking on {days}. Cancel it first, or leave those days out.")
+        cleaned["end"] = end
+        return cleaned
+
+
+class PackageForm(BootstrapMixin, forms.ModelForm):
+    class Meta:
+        model = Package
+        fields = ("price", "hours", "edited_photos", "description", "is_active")
+        labels = {"price": "Price (INR)", "hours": "Hours of coverage", "edited_photos": "Edited photos delivered",
+                  "description": "What is included", "is_active": "Offer this package"}
+        widgets = {"description": forms.Textarea(attrs={"rows": 2, "placeholder": "e.g. Full day coverage and a printed album"})}
+
+    def clean_price(self):
+        v = self.cleaned_data["price"]
+        if not 500 <= v <= 1000000:
+            raise forms.ValidationError("Enter a price between 500 and 1,000,000.")
+        return v
+
+    def clean_hours(self):
+        v = self.cleaned_data["hours"]
+        if not 1 <= v <= 24:
+            raise forms.ValidationError("Hours of coverage must be between 1 and 24.")
+        return v
+
+    def clean_edited_photos(self):
+        v = self.cleaned_data["edited_photos"]
+        if v > 5000:
+            raise forms.ValidationError("Please enter a realistic number of photos.")
+        return v

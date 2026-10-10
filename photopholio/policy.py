@@ -12,6 +12,12 @@ PAYMENT_WINDOW_HOURS = 24
 # The booking only stores a date (no time), so rules are counted in days.
 REFUND_TIERS = [(2, 100), (1, 50), (0, 0)]
 
+# Rescheduling: a customer may ask to move a booking to another day, and the photographer must agree.
+# The current date must be at least this many days away (same cut-off as a full refund), and each
+# booking can be moved only once, so a date cannot be shuffled around again and again.
+RESCHEDULE_MIN_DAYS = REFUND_TIERS[0][0]
+MAX_RESCHEDULES = 1
+
 
 def days_before(event_date, today=None):
     return (event_date - (today or timezone.localdate())).days

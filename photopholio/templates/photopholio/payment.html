@@ -6,7 +6,7 @@
   <div class="panel">
     <h3 class="mb-0">{{ booking.photographer.name }}</h3>
     <p class="muted">{{ booking.event_date|date:"l, j F Y" }} in {{ booking.photographer.city.name }}</p>
-    <div class="d-flex justify-content-between border-top pt-3 mb-3"><span>Total for the day</span><strong class="fs-4">&#8377;{{ booking.amount }}</strong></div>
+    <div class="d-flex justify-content-between border-top pt-3 mb-3"><span>{% if booking.package_name %}{{ booking.package_name }} package{% else %}Total for the day{% endif %}</span><strong class="fs-4">&#8377;{{ booking.amount }}</strong></div>
     <div class="alert alert-light border small">Cancellation: {% for label, percent in policy_rows %}{{ percent }}% refund {{ label|lower }}{% if not forloop.last %}; {% endif %}{% endfor %}. <a href="{% url 'cancellation_policy' %}">Read the policy</a></div>
     <form method="post" novalidate>{% csrf_token %}
       {% include 'photopholio/_form_fields.html' %}

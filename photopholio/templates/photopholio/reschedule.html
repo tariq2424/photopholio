@@ -1,0 +1,24 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}Change date{% endblock %}
+{% block content %}
+<div class="container section" style="max-width:760px">
+  <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-4">Change your date</h1>
+  <div class="panel mb-4">
+    <h3 class="mb-0">{{ booking.photographer.name }}</h3>
+    <p class="muted mb-2">Currently booked for {{ booking.event_date|date:"l, j F Y" }}</p>
+    <p class="small muted mb-3">Pick a new day and we'll ask {{ booking.photographer.name.split.0 }}. Your price and payment don't change, and you keep the old date until they say yes.
+      You can move a booking <strong>once</strong>, and only while the shoot is at least {{ min_days }} days away.</p>
+    <form method="post" novalidate>{% csrf_token %}
+      {% for e in form.non_field_errors %}<div class="alert alert-danger py-2 small">{{ e }}</div>{% endfor %}
+      <div class="mb-3"><label class="form-label" for="{{ form.new_date.id_for_label }}">{{ form.new_date.label }}</label>{{ form.new_date }}
+        {% for e in form.new_date.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}</div>
+      <div class="mb-3"><label class="form-label" for="{{ form.reason.id_for_label }}">{{ form.reason.label }}</label>{{ form.reason }}
+        {% for e in form.reason.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}</div>
+      <button class="btn btn-primary" type="submit">Send request</button>
+      <a class="btn btn-link" href="{% url 'my_bookings' %}">Keep my date</a>
+    </form>
+  </div>
+  <h2 class="mb-3" style="font-size:1.4rem">{{ booking.photographer.name }}'s calendar</h2>
+  {% include 'photopholio/_calendar.html' with months=calendar_months %}
+</div>
+{% endblock %}

@@ -13,6 +13,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from PIL import Image, ImageDraw, ImageFilter
 
+from photopholio.packages import create_sample_packages
 from photopholio.models import (Booking, City, Country, Feedback, Payment,
                                 Photo, Photographer, Portfolio, State)
 
@@ -119,6 +120,7 @@ class Command(BaseCommand):
             rnd = random.Random(idx)
             ph = Photographer.objects.create(name=name, specialities=sp, city=cities[city],
                                              experience_years=years, price_per_day=price, bio=bio)
+            create_sample_packages(ph)
             pf = Portfolio.objects.create(photographer=ph, title=ptitle,
                                           description=f"A selection from {name}'s recent {ph.get_specialities_display().lower()} work.")
             added = now - timedelta(days=rnd.randint(75, 140), hours=rnd.randint(0, 20))

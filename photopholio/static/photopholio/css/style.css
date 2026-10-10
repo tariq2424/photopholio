@@ -4,7 +4,9 @@
   --bs-body-font-family:'Manrope',system-ui,sans-serif; --bs-body-color:var(--ink); --bs-body-bg:var(--paper);
   --bs-link-color:var(--indigo); --bs-link-hover-color:var(--indigo-d);
 }
+html,body{overflow-x:clip}
 body{background:var(--paper);line-height:1.65}
+img{max-width:100%}
 h1,h2,h3,.serif{font-family:'Instrument Serif',Georgia,serif;font-weight:400;line-height:1.08;letter-spacing:-.01em}
 h1{font-size:clamp(2.5rem,5.6vw,4.3rem)} h2{font-size:clamp(1.8rem,3.2vw,2.5rem)} h3{font-size:1.4rem}
 .muted{color:var(--muted)} .measure{max-width:56ch}
@@ -25,7 +27,7 @@ a{text-underline-offset:3px}
 .alert{border-radius:12px;border:0}
 
 /* hero */
-.hero{padding:clamp(2rem,6vw,4.5rem) 0 clamp(1.5rem,4vw,3rem)}
+.hero{padding-block:clamp(2rem,6vw,4.5rem) clamp(1.5rem,4vw,3rem)}
 .searchbar{display:flex;flex-wrap:wrap;gap:.5rem;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:.6rem;margin-top:1.8rem;box-shadow:0 14px 30px -22px rgba(28,34,48,.5)}
 .searchbar .form-control,.searchbar .form-select{border:0;background:transparent;flex:1 1 150px;min-width:0}
 .searchbar .divider{width:1px;background:var(--line);margin:.35rem 0}
@@ -38,7 +40,7 @@ a{text-underline-offset:3px}
 .mosaic .tag{position:absolute;left:.6rem;bottom:.6rem;background:rgba(28,34,48,.78);padding:.25rem .65rem;border-radius:999px;font-size:.8rem;font-weight:600}
 
 /* sections */
-.section{padding:clamp(2rem,5vw,3.6rem) 0}
+.section{padding-block:clamp(2rem,5vw,3.6rem)}
 .section-head{display:flex;justify-content:space-between;align-items:end;flex-wrap:wrap;gap:.6rem;margin-bottom:1.5rem}
 .band{background:var(--card);border-block:1px solid var(--line)}
 .chip{display:inline-block;padding:.45rem 1rem;border:1px solid #d5d9df;border-radius:999px;background:var(--card);color:var(--ink);font-weight:600;font-size:.92rem;text-decoration:none;transition:background .15s,color .15s}
@@ -125,3 +127,136 @@ footer.site-footer{border-top:1px solid var(--line);background:var(--card);paddi
 .status-accepted{background:#e0f2fe;color:#075985}
 .status-declined{background:#fde2e4;color:#9b1c28}
 .refund-note{font-size:.85rem;margin-top:.15rem}
+
+/* availability calendar */
+.cal-wrap{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:1.4rem}
+.cal-title{font-size:1.15rem;margin:0 0 .5rem}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.cal-head{text-align:center;font-size:.72rem;color:var(--muted);font-weight:700}
+.cal-day{aspect-ratio:1;display:grid;place-items:center;border-radius:8px;border:0;font-size:.85rem;background:transparent;padding:0}
+.cal-day.empty{visibility:hidden}
+.cal-day.past{color:#c3c8d0}
+.cal-day.free{background:#e3f4e9;color:#146336;font-weight:700}
+button.cal-day.free{cursor:pointer}
+button.cal-day.free:hover,.cal-day.picked{background:#198754;color:#fff}
+.cal-day.booked{background:#eceef1;color:#9aa3af;text-decoration:line-through}
+.cal-day.blocked{background:repeating-linear-gradient(45deg,#fff1cc,#fff1cc 4px,#fbe3a1 4px,#fbe3a1 8px);color:#7a5400}
+.cal-legend{display:flex;gap:1.2rem;flex-wrap:wrap;margin-top:.9rem;font-size:.82rem;color:var(--muted)}
+.cal-key{display:inline-block;width:.9rem;height:.9rem;border-radius:4px;vertical-align:-2px;margin-right:.3rem}
+.cal-key.free{background:#e3f4e9;border:1px solid #198754}.cal-key.booked{background:#eceef1;border:1px solid #c3c8d0}
+.cal-key.blocked{background:repeating-linear-gradient(45deg,#fff1cc,#fff1cc 3px,#fbe3a1 3px,#fbe3a1 6px);border:1px solid #e1b84a}
+
+/* packages */
+.pkg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem}
+.pkg{display:flex;flex-direction:column;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:1.1rem}
+.pkg-tier{font-weight:700;color:var(--indigo);text-transform:uppercase;font-size:.78rem;letter-spacing:.06em}
+.pkg-price{font-family:'Instrument Serif',serif;font-size:2rem;line-height:1.1;margin:.2rem 0 .6rem}
+.pkg-list{padding-left:1.1rem;margin:0 0 .6rem;font-size:.92rem}
+.pkg-option{display:flex;align-items:center;gap:.6rem;border:1px solid #d5d9df;border-radius:10px;padding:.55rem .75rem;margin-bottom:.4rem;cursor:pointer;font-size:.9rem}
+.pkg-option:has(input:checked){border-color:var(--indigo);background:#eef0fb}
+.pkg-option input{accent-color:var(--indigo)}
+
+/* 4D: wishlist, verified, replies, dashboard */
+.pcard-wrap{position:relative}
+.heart-form{position:absolute;left:.7rem;top:.7rem;margin:0}
+.heart{display:grid;place-items:center;width:2.2rem;height:2.2rem;border-radius:50%;border:0;background:rgba(255,255,255,.92);color:var(--ink);font-size:1rem;text-decoration:none;cursor:pointer;box-shadow:0 2px 8px -3px rgba(28,34,48,.5)}
+.heart-link{position:absolute;left:.7rem;top:.7rem}
+.heart:hover{color:#c0283d}.heart.on{color:#c0283d}
+.verified{color:var(--indigo);font-size:.85em}
+.verified-pill{display:inline-block;margin-top:.35rem;font-size:.82rem;font-weight:700;color:var(--indigo-d);background:#eef0fb;border-radius:999px;padding:.15rem .65rem}
+.reply{margin:.6rem 0 0 .2rem;padding:.5rem .9rem;border-left:3px solid var(--indigo);background:#f3f4fa;border-radius:0 8px 8px 0;font-size:.92rem}
+.stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.8rem;margin-bottom:1.8rem}
+.stat{display:block;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:.9rem 1.1rem;color:inherit;text-decoration:none}
+.stat span{display:block;font-size:.8rem;color:var(--muted);font-weight:600}
+.stat strong{display:block;font-family:'Instrument Serif',serif;font-weight:400;font-size:1.9rem;line-height:1.15}
+.stat small{color:var(--muted);font-size:.82rem}
+.stat-link:hover{border-color:var(--indigo);color:inherit}
+.sec-title{font-size:1.4rem;margin:1.8rem 0 .8rem}
+.delivery-form{border-top:1px dashed var(--line);padding-top:.7rem}
+
+/* Wide row gutters (g-4, g-5) are larger than the container's side padding, so on small screens the row
+   poked out of the page by 12px and the site could be dragged sideways. Cap the gutter below desktop. */
+@media(max-width:991.98px){.row.g-4,.row.g-5,.row.gx-4,.row.gx-5{--bs-gutter-x:1.5rem}}
+
+/* ---------------------------------------------------------------------------
+   Polish pass. Same colours and fonts as before; this block only tidies what felt flat or cramped.
+   --------------------------------------------------------------------------- */
+:root{--sans:'Manrope',system-ui,sans-serif}
+
+/* Instrument Serif draws "1" like a lowercase l, which made dates and amounts hard to read.
+   Headings keep the serif; every figure now uses the sans. */
+.date-badge b,.stat strong,.pkg-price,.steps li::before,.mosaic .tile-fallback{font-family:var(--sans);font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.date-badge b{font-size:1.5rem}
+.stat strong{font-size:1.55rem;margin:.1rem 0}
+.pkg-price{font-size:1.75rem}
+.pkg-tier{text-transform:none;letter-spacing:0;font-size:.9rem}
+
+/* hero: the photos sit like prints pinned to a board, which is the one playful thing on the page */
+.hero h1{text-wrap:balance}
+.searchbar{align-items:center}
+.searchbar .form-control,.searchbar .form-select{flex:1 1 170px}
+.searchbar .btn{flex:1 1 100%}
+.mosaic{gap:.9rem;padding:.4rem}
+.mosaic a{border-radius:6px;border:6px solid #fff;box-shadow:0 18px 30px -20px rgba(20,26,42,.65);transition:transform .25s}
+.mosaic a:nth-child(1){transform:rotate(-1.6deg)}
+.mosaic a:nth-child(2){transform:rotate(1.4deg)}
+.mosaic a:nth-child(3){transform:rotate(-.8deg)}
+.mosaic a:hover{transform:rotate(0) scale(1.02);z-index:2}
+.mosaic .tag{left:.4rem;bottom:.4rem;font-size:.75rem}
+
+/* cards */
+.pcard-media{border-radius:12px}
+.pcard{transition:transform .2s}
+.pcard:hover{transform:translateY(-3px)}
+.pcard-body h3{font-size:1.35rem}
+.pcard-meta{flex-wrap:wrap;font-size:.88rem}
+.pcard-price{font-size:.95rem}
+
+/* how it works */
+.steps li{border-top:0;padding-top:0;position:relative}
+.steps li::before{width:2.2rem;height:2.2rem;display:grid;place-items:center;border-radius:50%;background:var(--indigo);color:#fff;font-size:1rem;margin-bottom:.6rem}
+
+/* portfolio: a tidy grid that fills the width instead of narrow columns */
+.masonry{columns:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:.7rem}
+.masonry button{margin:0;aspect-ratio:4/3;border-radius:10px}
+.masonry img{height:100%;object-fit:cover}
+
+/* bookings: a coloured edge so you can scan the list by status */
+.booking{border-left:4px solid var(--line)}
+.booking:has(.status-confirmed){border-left-color:#4a5bd0}
+.booking:has(.status-accepted){border-left-color:#0ea5e9}
+.booking:has(.status-pending){border-left-color:var(--amber)}
+.booking:has(.status-completed){border-left-color:#2e9e62}
+.booking:has(.status-cancelled),.booking:has(.status-declined){border-left-color:#c0c6cf}
+.stat{transition:border-color .15s}
+.panel,.booking,.book-card,.pkg,.stat,.filters{box-shadow:0 1px 0 rgba(20,26,42,.03)}
+.book-card{box-shadow:0 22px 40px -28px rgba(20,26,42,.55)}
+
+/* phones and small tablets */
+@media(max-width:575.98px){
+  .container{--bs-gutter-x:1.75rem}
+  h1{font-size:clamp(2.1rem,9vw,2.6rem)}
+  .grid-cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:1.1rem .8rem}
+  .pcard-body h3{font-size:1.1rem}
+  .pcard-meta{flex-direction:column;gap:0;font-size:.8rem}
+  .pcard-style{font-size:.7rem;padding:.15rem .55rem}
+  .pcard-body .rating{font-size:.85rem}
+  .btn-sm{padding:.55rem .95rem;font-size:.9rem}
+  .form-control,.form-select{font-size:16px} /* stops iPhones zooming into the field */
+  .booking{padding:.9rem}
+  .booking>.d-flex{width:100%}
+  .stat-row{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .facts{gap:1.4rem}
+  .masonry{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .cal-wrap{grid-template-columns:1fr}
+  footer.site-footer .container>div:last-child{gap:.9rem 1.4rem!important}
+}
+/* the cards live in 2 columns on phones, so the hearts shrink a little */
+@media(max-width:575.98px){.heart,.heart-link{width:1.9rem;height:1.9rem;left:.5rem;top:.5rem}.heart-form{left:.5rem;top:.5rem}}
+
+/* logo: the lens "P" mark with the wordmark next to it */
+.brand{gap:.55rem}
+.logo-mark{flex:none;display:block}
+.logo-word{font-family:'Instrument Serif',Georgia,serif;font-size:1.7rem;line-height:1;letter-spacing:-.01em}
+footer.site-footer .brand .logo-mark{width:30px;height:30px}
+footer.site-footer .brand .logo-word{font-size:1.5rem}

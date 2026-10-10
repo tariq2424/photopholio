@@ -4,6 +4,7 @@
 <div class="container section">
   <h1 style="font-size:clamp(2.2rem,4.5vw,3.2rem)" class="mb-1">Photographers</h1>
   <p class="muted mb-4">{{ page.paginator.count }} match{{ page.paginator.count|pluralize:"es," }} right now</p>
+  {% if wanted_date %}<p class="mb-4"><span class="chip" style="cursor:default">Free on {{ wanted_date|date:"l, j F Y" }}</span> <a class="small ms-2" href="?{{ querystring_without_date }}">Clear date</a></p>{% endif %}
   <div class="row g-4">
     <aside class="col-lg-3">
       <button class="btn btn-outline-dark d-lg-none w-100 mb-3" type="button" data-bs-toggle="collapse" data-bs-target="#filters" aria-expanded="false" aria-controls="filters"><i class="bi bi-sliders"></i> Filters</button>
@@ -14,6 +15,8 @@
           <select class="form-select" id="city" name="city"><option value="">Any city</option>{% for c in cities %}<option value="{{ c.id }}" {% if filters.city == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select></div>
         <div class="mb-3"><label class="form-label" for="sp">Style</label>
           <select class="form-select" id="sp" name="speciality"><option value="">Any style</option>{% for v,l in specialities %}<option value="{{ v }}" {% if filters.speciality == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+        <div class="mb-3"><label class="form-label" for="dt">Free on date</label>
+          <input class="form-control" type="date" id="dt" name="date" min="{{ today }}" value="{{ filters.date }}"></div>
         <div class="mb-3"><label class="form-label" for="mr">Rating</label>
           <select class="form-select" id="mr" name="min_rating"><option value="">Any rating</option>
             <option value="4.5" {% if filters.min_rating == "4.5" %}selected{% endif %}>4.5 and up</option>
@@ -26,6 +29,7 @@
             <option value="price_high" {% if filters.sort == "price_high" %}selected{% endif %}>Price, high to low</option>
             <option value="experience" {% if filters.sort == "experience" %}selected{% endif %}>Most experienced</option></select></div>
         <div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="av" name="available" value="1" {% if filters.available %}checked{% endif %}><label class="form-check-label" for="av">Only show available</label></div>
+        <div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="vf" name="verified" value="1" {% if filters.verified %}checked{% endif %}><label class="form-check-label" for="vf">Verified only</label></div>
         <button class="btn btn-primary w-100" type="submit">Apply</button>
         <a class="btn btn-link w-100 mt-1" href="{% url 'photographer_list' %}">Clear filters</a>
       </form>

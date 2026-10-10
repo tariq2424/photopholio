@@ -1,0 +1,71 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+{% with k=data.kpis %}
+<div class="row">
+  <div class="col-6 col-lg-3 mb-3"><div class="card h-100"><div class="card-body">
+    <div class="text-muted small">Net revenue</div><div class="h3 mb-0">&#8377;{{ k.net }}</div>
+    <div class="small text-muted">&#8377;{{ k.gross }} paid, &#8377;{{ k.refunds }} refunds</div></div></div></div>
+  <div class="col-6 col-lg-3 mb-3"><div class="card h-100"><div class="card-body">
+    <div class="text-muted small">Bookings</div><div class="h3 mb-0">{{ k.total_bookings }}</div>
+    <div class="small text-muted">{{ k.requests_this_month }} requested this month</div></div></div></div>
+  <div class="col-6 col-lg-3 mb-3"><div class="card h-100"><div class="card-body">
+    <div class="text-muted small">Live photographers</div><div class="h3 mb-0">{{ k.live_photographers }}</div>
+    <div class="small text-muted">{{ k.customers }} customers</div></div></div></div>
+  <div class="col-6 col-lg-3 mb-3"><div class="card h-100"><div class="card-body">
+    <div class="text-muted small">Average booking</div><div class="h3 mb-0">&#8377;{{ k.avg_value }}</div>
+    <div class="small text-muted">of paid bookings</div></div></div></div>
+</div>
+
+<div class="row">
+  <div class="col-lg-6 mb-3"><div class="card h-100 {% if k.pending_approvals %}border-warning{% endif %}"><div class="card-header"><strong>Waiting for your approval ({{ k.pending_approvals }})</strong></div>
+    <div class="card-body p-0">{% if data.pending_approvals %}<table class="table table-sm mb-0"><tbody>
+      {% for p in data.pending_approvals %}<tr><td><a href="{% url 'admin:photopholio_photographer_change' p.pk %}">{{ p.name }}</a></td><td class="text-muted">{{ p.city.name }}, {{ p.get_specialities_display }}</td><td class="text-right"><a href="{% url 'admin:photopholio_photographer_change' p.pk %}">Review</a></td></tr>{% endfor %}
+    </tbody></table>{% else %}<p class="p-3 mb-0 text-muted">Nothing waiting.</p>{% endif %}</div></div></div>
+  <div class="col-lg-6 mb-3"><div class="card h-100 {% if k.pending_refunds %}border-warning{% endif %}"><div class="card-header"><strong>Refunds to process ({{ k.pending_refunds }}, &#8377;{{ k.pending_refund_amount }})</strong></div>
+    <div class="card-body p-0">{% if data.pending_refunds %}<table class="table table-sm mb-0"><tbody>
+      {% for p in data.pending_refunds %}<tr><td>{{ p.user.username }}</td><td class="text-muted">{{ p.booking.photographer.name }}</td><td>&#8377;{{ p.refund_amount }}</td><td class="text-right"><a href="{% url 'admin:photopholio_payment_change' p.pk %}">Open</a></td></tr>{% endfor %}
+    </tbody></table>
+    <p class="p-2 mb-0 small"><a href="{% url 'admin:photopholio_payment_changelist' %}?refund_status__exact=pending">Open the list to mark them processed</a></p>
+    {% else %}<p class="p-3 mb-0 text-muted">No refunds pending.</p>{% endif %}</div></div></div>
+</div>
+
+<div class="row">
+  <div class="col-lg-8 mb-3"><div class="card h-100"><div class="card-header"><strong>Booking requests per month</strong></div><div class="card-body"><canvas id="c-requests" height="110"></canvas></div></div></div>
+  <div class="col-lg-4 mb-3"><div class="card h-100"><div class="card-header"><strong>Bookings by status</strong></div><div class="card-body"><canvas id="c-status" height="220"></canvas></div></div></div>
+</div>
+<div class="row">
+  <div class="col-lg-8 mb-3"><div class="card h-100"><div class="card-header"><strong>Money per month</strong></div><div class="card-body"><canvas id="c-money" height="110"></canvas></div></div></div>
+  <div class="col-lg-4 mb-3"><div class="card h-100"><div class="card-header"><strong>Top photographers by revenue</strong></div><div class="card-body"><canvas id="c-top" height="220"></canvas></div></div></div>
+</div>
+
+<div class="row">
+  <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header"><strong>Marketplace health</strong></div><div class="card-body">
+    <p class="mb-1">Photographers accept <strong>{% if k.acceptance_rate is None %}n/a{% else %}{{ k.acceptance_rate }}%{% endif %}</strong> of the requests they answer.</p>
+    <p class="mb-1"><strong>{% if k.payment_rate is None %}n/a{% else %}{{ k.payment_rate }}%{% endif %}</strong> of accepted bookings get paid.</p>
+    <p class="mb-0"><strong>{% if k.cancellation_rate is None %}n/a{% else %}{{ k.cancellation_rate }}%{% endif %}</strong> of all bookings end up cancelled.</p></div></div></div>
+  <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header"><strong>Photographers who cancelled most</strong></div><div class="card-body p-0">
+    {% if data.cancellers %}<table class="table table-sm mb-0"><tbody>{% for p in data.cancellers %}<tr><td><a href="{% url 'admin:photopholio_photographer_change' p.pk %}">{{ p.name }}</a></td><td class="text-right">{{ p.c }} cancellation{{ p.c|pluralize }}</td></tr>{% endfor %}</tbody></table>
+    {% else %}<p class="p-3 mb-0 text-muted">No photographer has cancelled a booking.</p>{% endif %}</div></div></div>
+</div>
+{% endwith %}
+<p class="small text-muted">Net revenue = completed payments minus refunds (pending or processed). Acceptance rate counts requests the photographer answered; automatic declines when a date is taken are not counted.</p>
+
+{{ data.chart|json_script:"chart-data" }}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  if (typeof Chart === 'undefined') { return; }
+  var d = JSON.parse(document.getElementById('chart-data').textContent);
+  var navy = '#2f3f9e', amber = '#f0a500', red = '#dc3545', green = '#198754', grey = '#6c757d';
+  var noLegend = { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } };
+  new Chart('c-requests', { type: 'bar', data: { labels: d.months, datasets: [{ data: d.requests, backgroundColor: navy }] }, options: noLegend });
+  new Chart('c-money', { type: 'bar', data: { labels: d.months, datasets: [
+      { label: 'Paid', data: d.gross, backgroundColor: green }, { label: 'Refunds', data: d.refunds, backgroundColor: red }] },
+    options: { scales: { y: { beginAtZero: true } } } });
+  new Chart('c-status', { type: 'doughnut', data: { labels: d.status_labels, datasets: [{ data: d.status_values,
+      backgroundColor: [amber, '#0ea5e9', navy, green, grey, red] }] }, options: { plugins: { legend: { position: 'bottom' } } } });
+  new Chart('c-top', { type: 'bar', data: { labels: d.top_names, datasets: [{ data: d.top_values, backgroundColor: amber }] },
+    options: { indexAxis: 'y', plugins: { legend: { display: false } } } });
+})();
+</script>
+{% endblock %}

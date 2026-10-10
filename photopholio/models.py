@@ -119,6 +119,11 @@ class Photographer(models.Model):
                                     related_name="reviewed_photographers")
     reviewed_at = models.DateTimeField(null=True, blank=True)
 
+    # Set by the admin after checking the photographer's identity / work. Customers see a badge.
+    is_verified = models.BooleanField("verified", default=False, db_index=True,
+                                      help_text="Shows a Verified badge on the card and profile.")
+    verified_at = models.DateTimeField(null=True, blank=True)
+
     objects = PhotographerQuerySet.as_manager()
 
     class Meta:
@@ -135,6 +140,18 @@ class Photographer(models.Model):
             ("City added", bool(self.city_id)),
             (f"At least {self.MIN_PHOTOS} portfolio photos", self.published_photo_count() >= self.MIN_PHOTOS),
         ]
+
+    @property
+    def active_packages(self):
+        """Packages customers can pick, Basic first. Uses prefetched data when a view asked for it."""
+        order = Package.TIER_ORDER
+        return sorted((p for p in self.packages.all() if p.is_active), key=lambda p: order[p.tier])
+
+    @property
+    def starting_price(self):
+        """The lowest package price, or the plain full-day price when there are no packages."""
+        prices = [p.price for p in self.active_packages]
+        return min(prices) if prices else self.price_per_day
 
     def cancellations_count(self):
         """How many bookings this photographer cancelled themselves (admin keeps an eye on this)."""
@@ -170,7 +187,8 @@ class Photographer(models.Model):
         )
 
     def refresh_rating(self):
-        avg = Feedback.objects.filter(booking__photographer=self).aggregate(a=Avg("rating"))["a"]
+        # Reviews the admin has hidden do not count towards the rating either.
+        avg = Feedback.objects.filter(booking__photographer=self, is_hidden=False).aggregate(a=Avg("rating"))["a"]
         self.rating = round(avg, 1) if avg else 0
         self.save(update_fields=["rating"])
 
@@ -232,10 +250,19 @@ class Booking(models.Model):
     tool = models.CharField("equipment / requirements", max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="pending")
+    # What the customer chose and agreed to. Copied at booking time so that a photographer changing
+    # or deleting a package later never changes a booking that already exists.
+    package = models.ForeignKey("Package", on_delete=models.SET_NULL, null=True, blank=True, related_name="bookings")
+    package_name = models.CharField(max_length=60, blank=True)
+    price = models.PositiveIntegerField(null=True, blank=True)
     accepted_at = models.DateTimeField(null=True, blank=True)
     cancelled_by = models.CharField(max_length=12, choices=CANCELLED_BY_CHOICES, blank=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)
     cancel_reason = models.TextField(blank=True)
+    # Photos are delivered as a link (Google Drive, Dropbox, ...) once the shoot is completed.
+    delivery_link = models.URLField(max_length=500, blank=True)
+    delivery_note = models.CharField(max_length=255, blank=True)
+    delivered_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -262,7 +289,8 @@ class Booking(models.Model):
 
     @property
     def amount(self):
-        return self.photographer.price_per_day
+        # Bookings made before packages existed have no snapshot (price is empty): fall back to the day rate.
+        return self.price if self.price is not None else self.photographer.price_per_day
 
     @property
     def is_paid(self):
@@ -271,6 +299,47 @@ class Booking(models.Model):
     @property
     def can_review(self):
         return self.status == "completed" and not self.feedbacks.exists()
+
+    @property
+    def pending_reschedule(self):
+        return self.reschedules.filter(status="pending").first()
+
+    @property
+    def reschedule_count(self):
+        return self.reschedules.filter(status="accepted").count()
+
+    def can_request_reschedule(self, today=None):
+        """Why not? is answered by booking_flow.request_reschedule; this is the quick yes/no for buttons."""
+        from .policy import MAX_RESCHEDULES, RESCHEDULE_MIN_DAYS, days_before
+        return (self.status in ("accepted", "confirmed")
+                and self.pending_reschedule is None
+                and self.reschedule_count < MAX_RESCHEDULES
+                and days_before(self.event_date, today) >= RESCHEDULE_MIN_DAYS)
+
+
+class RescheduleRequest(models.Model):
+    """The customer asks to move a booking to another day; the photographer says yes or no."""
+    STATUS_CHOICES = [
+        ("pending", "Waiting for photographer"),
+        ("accepted", "Accepted"),
+        ("declined", "Declined"),
+        ("withdrawn", "Withdrawn by customer"),
+        ("closed", "Closed (booking ended)"),
+    ]
+    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name="reschedules")
+    old_date = models.DateField()
+    new_date = models.DateField()
+    reason = models.CharField(max_length=255, blank=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="pending")
+    decline_reason = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.booking_id}: {self.old_date} -> {self.new_date} ({self.status})"
 
 
 class Payment(models.Model):
@@ -310,6 +379,11 @@ class Feedback(models.Model):
     rating = models.FloatField(validators=[MinValueValidator(1), MaxValueValidator(5)])
     comment = models.TextField()
     review_date = models.DateTimeField(auto_now_add=True)
+    # The photographer may answer a review once (and edit the answer). The admin may hide a review that
+    # breaks the rules; a hidden review is not shown and does not count towards the rating.
+    reply = models.TextField(blank=True)
+    replied_at = models.DateTimeField(null=True, blank=True)
+    is_hidden = models.BooleanField(default=False, db_index=True)
 
     class Meta:
         ordering = ["-review_date"]
@@ -321,6 +395,20 @@ class Feedback(models.Model):
 
     def __str__(self):
         return f"{self.rating} by {self.user.username}"
+
+
+class Favourite(models.Model):
+    """A customer's saved photographer (the wishlist)."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="favourites")
+    photographer = models.ForeignKey(Photographer, on_delete=models.CASCADE, related_name="favourited_by")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        unique_together = ("user", "photographer")
+
+    def __str__(self):
+        return f"{self.user.username} saved {self.photographer.name}"
 
 
 class ContactUs(models.Model):
@@ -338,3 +426,52 @@ class ContactUs(models.Model):
 
     def __str__(self):
         return f"{self.subject} from {self.name}"
+
+
+class LoginAttempt(models.Model):
+    """One failed login. Too many recent ones for the same account locks the login for a while (see throttle.py)."""
+    key = models.CharField(max_length=254, db_index=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)  # for the admin to look at; never used to decide a lock
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.key} at {self.created_at:%d %b %H:%M}"
+
+
+class BlockedDate(models.Model):
+    """A day the photographer marked as unavailable (holiday, another job). Customers just see it as taken."""
+    photographer = models.ForeignKey(Photographer, on_delete=models.CASCADE, related_name="blocked_dates")
+    date = models.DateField()
+    reason = models.CharField(max_length=120, blank=True, help_text="Only the photographer and the admin see this.")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["date"]
+        unique_together = ("photographer", "date")
+
+    def __str__(self):
+        return f"{self.photographer.name} blocked {self.date}"
+
+
+class Package(models.Model):
+    """One of up to three things a photographer sells: Basic, Standard, Premium."""
+    TIER_CHOICES = [("basic", "Basic"), ("standard", "Standard"), ("premium", "Premium")]
+    TIER_ORDER = {"basic": 0, "standard": 1, "premium": 2}
+
+    photographer = models.ForeignKey(Photographer, on_delete=models.CASCADE, related_name="packages")
+    tier = models.CharField(max_length=10, choices=TIER_CHOICES)
+    price = models.PositiveIntegerField(help_text="Price in INR")
+    hours = models.PositiveSmallIntegerField(default=4, help_text="Hours of coverage")
+    edited_photos = models.PositiveIntegerField(default=100, help_text="Edited photos delivered")
+    description = models.CharField(max_length=300, blank=True, help_text="What is included, in a sentence or two")
+    is_active = models.BooleanField(default=True, help_text="Untick to stop offering it without deleting it")
+
+    class Meta:
+        unique_together = ("photographer", "tier")
+        ordering = ["price"]
+
+    def __str__(self):
+        return f"{self.photographer.name}: {self.get_tier_display()} (Rs.{self.price})"
