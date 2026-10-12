@@ -21,8 +21,10 @@ book an event date, pay (demo checkout) and leave reviews. Built from my GTU sum
 - Two account types chosen at signup: customers (book) and photographers (list their work). Each has its own login page
 - Photographer area: create a profile, manage portfolios and photos, see bookings, submit for review
 - Admin approval: a photographer's profile stays hidden from customers until an admin approves it (with a reject reason the photographer can read)
-- Emails for every booking step, approval and refund (printed in the terminal until real email settings are added)
-- Forgot password with an emailed reset link
+- **Email notifications (Gmail SMTP):** Sends emails for booking updates, photographer approval, refunds and other booking-related events when SMTP is configured
+- **Password reset:** Sends password-reset links to users' registered email addresses through the configured email backend
+- **Environment-based email configuration:** Uses a `.env` file for local development; production deployments must configure their own environment variables
+- **Secure credentials:** Gmail App Passwords are stored outside source control and must never be committed to GitHub
 - Admin analytics page at `/admin/analytics/`: revenue, bookings per month, approvals and refunds waiting, top photographers
 - Availability calendar on every photographer page (green = free, click a day to fill in the booking). Photographers block days they cannot work
 - Search by date: only photographers who are free on that day are shown (home page and the filters)
