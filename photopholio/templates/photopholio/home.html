@@ -18,7 +18,7 @@
         </form>
         <p class="small muted mt-3 mb-0">{{ photographer_count }} photographer{{ photographer_count|pluralize }} in {{ city_count }} cit{{ city_count|pluralize:"y,ies" }}.</p>
       </div>
-      <div class="col-lg-5 d-none d-md-block">
+      <div class="col-lg-5">
         <div class="mosaic">
           {% for p in featured|slice:":3" %}
           <a href="{% url 'photographer_detail' p.slug %}">

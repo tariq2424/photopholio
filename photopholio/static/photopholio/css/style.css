@@ -260,3 +260,17 @@ button.cal-day.free:hover,.cal-day.picked{background:#198754;color:#fff}
 .logo-word{font-family:'Instrument Serif',Georgia,serif;font-size:1.7rem;line-height:1;letter-spacing:-.01em}
 footer.site-footer .brand .logo-mark{width:30px;height:30px}
 footer.site-footer .brand .logo-word{font-size:1.5rem}
+
+/* The hero photos used to disappear below 768px. They now stay on every screen: on desktop a stack of
+   three prints beside the text, below that a row of three prints under the search bar. */
+.mosaic .tag{max-width:calc(100% - .8rem);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:991.98px){
+  .mosaic{grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:none;gap:.7rem;margin-top:.4rem}
+  .mosaic a:first-child{grid-row:auto}
+  .mosaic a{aspect-ratio:3/4;border-width:5px}
+}
+@media(max-width:575.98px){
+  .mosaic{gap:.5rem;padding:.3rem .2rem}
+  .mosaic a{border-width:4px;border-radius:5px}
+  .mosaic .tag{font-size:.62rem;padding:.15rem .45rem;left:.25rem;bottom:.25rem}
+}
