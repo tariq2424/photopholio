@@ -5,15 +5,17 @@ from django.contrib.admin import helpers
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
 from django.core.exceptions import PermissionDenied
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404, redirect
 from django.template.response import TemplateResponse
 from django.urls import path
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 
-from . import analytics, booking_flow, emails, reviews
+from . import analytics, booking_flow, emails, money, reviews, tracking
 from .throttle import ThrottledLoginMixin
 from .models import (Favourite, RescheduleRequest, Booking, City, ContactUs, Country, Feedback, BlockedDate, LoginAttempt, Package, Payment,
-                     Photo, Photographer, Portfolio, State, UserProfile)
+                     Photo, Photographer, Portfolio, ShootDay, ShootEvent, State, UserProfile)
 
 
 def thumb(image, size=70):
@@ -84,7 +86,7 @@ class PhotographerAdmin(admin.ModelAdmin):
     list_display = ["name", "status_badge", "is_verified", "specialities", "city", "rating", "price_per_day", "is_available", "login_account", "cancellations"]
     list_filter = ["status", "is_verified", "specialities", "city", "is_available"]
     list_editable = ["is_available", "price_per_day"]
-    search_fields = ["name", "bio", "user__username"]
+    search_fields = ["name", "bio", "tags", "user__username"]
     list_per_page = 20
     autocomplete_fields = ["user"]
     inlines = [PackageInline, PortfolioInline]
@@ -94,7 +96,9 @@ class PhotographerAdmin(admin.ModelAdmin):
         ("Review", {"fields": ["status", "rejection_reason", "reviewed_by", "reviewed_at",
                                "review_checklist", "portfolio_preview"]}),
         ("Profile", {"fields": ["name", "slug", "user", "specialities", "city", "experience_years",
-                                "price_per_day", "bio", "image", "is_available", "rating"]}),
+                                "price_per_day", "bio", "tags", "image", "is_available", "rating"]}),
+        ("Money", {"classes": ["collapse"], "fields": ["commission_percent", "payout_details"]}),
+        ("Travel policy", {"classes": ["collapse"], "fields": ["travel_scope", "travel_fee_state", "travel_fee_india", "stay_fee_per_day"]}),
         ("Trust", {"fields": ["is_verified", "verified_at"]}),
     ]
 
@@ -236,13 +240,42 @@ class PhotoAdmin(admin.ModelAdmin):
         return thumb(obj.image)
 
 
+class ShootDayInline(admin.TabularInline):
+    model = ShootDay
+    extra = 0
+    can_delete = False
+    readonly_fields = ["date", "arrived_at", "started_at", "finished_at", "customer_seen_at"]
+    fields = readonly_fields
+    verbose_name_plural = "Shoot days (what the photographer tapped)"
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+class ShootEventInline(admin.TabularInline):
+    model = ShootEvent
+    extra = 0
+    can_delete = False
+    readonly_fields = ["created_at", "actor_role", "actor", "action", "day", "note"]
+    fields = readonly_fields
+    verbose_name_plural = "Tracking history (who did what, and when)"
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(Booking)
 class BookingAdmin(admin.ModelAdmin):
-    list_display = ["user", "photographer", "package_name", "price", "event_date", "status", "cancelled_by", "cancelled_at", "created_at"]
-    list_filter = ["status", "cancelled_by", "event_date", "photographer"]
+    inlines = [ShootDayInline, ShootEventInline]
+    list_display = ["user", "photographer", "package_name", "price", "travel_fee", "event_date", "end_date", "event_city", "status",
+                    "platform_fee", "payout_amount", "payout_status", "created_at"]
+    list_filter = ["status", "payout_status", "dispute_status", "cancelled_by", "event_date", "photographer"]
     search_fields = ["user__username", "photographer__name"]
-    readonly_fields = ["package", "package_name", "price", "accepted_at", "cancelled_by", "cancelled_at", "cancel_reason",
-                       "delivery_link", "delivery_note", "delivered_at"]
+    readonly_fields = ["package", "package_name", "price", "day_rate", "travel_fee", "travel_zone", "accepted_at", "cancelled_by", "cancelled_at", "cancel_reason",
+                       "delivery_link", "delivery_note", "delivered_at", "commission_percent", "platform_fee", "payout_amount",
+                       "payout_status", "payout_reference", "payout_paid_at", "payout_note",
+                       "completed_at", "customer_confirmed_at", "customer_confirmed_by_customer", "dispute_status", "dispute_kind",
+                       "dispute_text", "dispute_opened_at", "dispute_outcome", "dispute_note", "dispute_resolved_at", "dispute_resolved_by"]
     actions = ["refund_in_full", "mark_completed"]
     # Status is deliberately not editable from the list: changing it by hand would skip the refund rules.
     # Use the actions below instead.
@@ -264,9 +297,13 @@ class BookingAdmin(admin.ModelAdmin):
     @admin.action(description="Mark selected bookings as completed")
     def mark_completed(self, request, queryset):
         todo = list(queryset.filter(status="confirmed").select_related("user", "photographer"))
-        n = queryset.filter(pk__in=[b.pk for b in todo]).update(status="completed")
+        now = timezone.now()
+        # The admin's own decision counts as the confirmation: the money becomes payable straight away.
+        n = queryset.filter(pk__in=[b.pk for b in todo]).update(status="completed", completed_at=now, customer_confirmed_at=now)
         for b in todo:
-            b.status = "completed"
+            b.status, b.completed_at, b.customer_confirmed_at = "completed", now, now
+            tracking.log(b, "admin", "marked_completed", actor=request.user, note="Marked completed by the admin.")
+            money.on_completed(b)
             emails.booking_completed(b)
         self.message_user(request, f"{n} booking(s) marked completed.", messages.SUCCESS)
 
@@ -344,11 +381,129 @@ def analytics_view(request):
     return TemplateResponse(request, "admin/photopholio/analytics.html", context)
 
 
+# --- Payouts page: /admin/payouts/ ------------------------------------------------
+# Where the admin pays photographers (by UPI / bank transfer, outside the site) and records the reference.
+
+def _can_manage_payouts(request):
+    return request.user.has_perm("photopholio.change_booking")
+
+
+def payouts_view(request):
+    if not _can_manage_payouts(request):
+        raise PermissionDenied
+    bookings = Booking.objects.select_related("photographer", "user")
+    ready = list(bookings.filter(payout_status="ready").order_by("photographer__name", "event_date"))
+    by_photographer = {}
+    for b in ready:
+        group = by_photographer.setdefault(b.photographer_id, {"photographer": b.photographer, "bookings": [], "total": 0})
+        group["bookings"].append(b)
+        group["total"] += b.payout_amount
+    context = {
+        **admin.site.each_context(request), "title": "Payouts",
+        "groups": list(by_photographer.values()),
+        "ready_total": sum(b.payout_amount for b in ready),
+        "recover": list(bookings.filter(payout_status="recover").order_by("-event_date")),
+        "held": money.totals(Booking.objects.all()).get("held", {"n": 0, "money": 0, "fee": 0}),
+        "recent": list(bookings.filter(payout_status="paid").order_by("-payout_paid_at")[:25]),
+        "percent": money.default_percent(),
+    }
+    return TemplateResponse(request, "admin/photopholio/payouts.html", context)
+
+
+def payout_pay_view(request, pk):
+    if not _can_manage_payouts(request):
+        raise PermissionDenied
+    if request.method != "POST":
+        return redirect("admin:photopholio_payouts")
+    booking = get_object_or_404(Booking.objects.select_related("photographer", "user"), pk=pk)
+    try:
+        money.mark_paid(booking, request.POST.get("reference", ""))
+        messages.success(request, f"Marked as paid: Rs.{booking.payout_amount} to {booking.photographer.name}. They were emailed.")
+    except booking_flow.FlowError as e:
+        messages.error(request, str(e))
+    return redirect("admin:photopholio_payouts")
+
+
+def payout_recovered_view(request, pk):
+    if not _can_manage_payouts(request):
+        raise PermissionDenied
+    if request.method != "POST":
+        return redirect("admin:photopholio_payouts")
+    booking = get_object_or_404(Booking, pk=pk)
+    try:
+        money.mark_recovered(booking, request.POST.get("note", ""))
+        messages.success(request, "Marked as recovered.")
+    except booking_flow.FlowError as e:
+        messages.error(request, str(e))
+    return redirect("admin:photopholio_payouts")
+
+
+def disputes_view(request):
+    if not _can_manage_payouts(request):
+        raise PermissionDenied
+    bookings = Booking.objects.select_related("photographer", "user")
+    open_ones = list(bookings.filter(dispute_status="open").prefetch_related("shoot_days", "shoot_events").order_by("dispute_opened_at"))
+    for b in open_ones:
+        b.timeline = list(b.shoot_events.all())
+        b.days_view = b.day_states()
+    waiting = list(bookings.filter(status="completed", completed_at__isnull=False, customer_confirmed_at__isnull=True)
+                   .exclude(dispute_status="open").order_by("completed_at"))
+    recent = list(bookings.filter(dispute_status="resolved").exclude(dispute_outcome="closed").order_by("-dispute_resolved_at")[:15])
+    return TemplateResponse(request, "admin/photopholio/disputes.html", {
+        **admin.site.each_context(request), "title": "Reported problems", "open": open_ones, "waiting": waiting, "recent": recent})
+
+
+def dispute_resolve_view(request, pk):
+    if not _can_manage_payouts(request):
+        raise PermissionDenied
+    if request.method != "POST":
+        return redirect("admin:photopholio_disputes")
+    get_object_or_404(Booking, pk=pk)
+    try:
+        booking = tracking.resolve_dispute(pk, request.user, request.POST.get("outcome", ""), request.POST.get("note", ""))
+        messages.success(request, f"Decision saved for booking #{pk}: {booking.get_dispute_outcome_display()}. Both people were emailed.")
+    except booking_flow.FlowError as e:
+        messages.error(request, str(e))
+    return redirect("admin:photopholio_disputes")
+
+
+def _csv_safe(value):
+    """A cell that starts with = + - or @ would run as a formula in Excel, so it gets a quote in front."""
+    text = "" if value is None else str(value)
+    return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
+
+
+def payouts_csv_view(request):
+    if not _can_manage_payouts(request):
+        raise PermissionDenied
+    import csv
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="photopholio-payouts.csv"'
+    out = csv.writer(response)
+    out.writerow(["Booking", "Photographer", "Customer", "Event", "Days", "Customer paid", "Service price", "Travel",
+                  "Commission %", "Commission", "Photographer gets", "Status", "Transfer reference", "Paid on"])
+    for b in Booking.objects.exclude(payout_status="").select_related("photographer", "user").order_by("-event_date"):
+        out.writerow([_csv_safe(v) for v in [
+            b.pk, b.photographer.name, b.user.username, b.date_label, b.days, b.amount, b.service_price, b.travel_fee,
+            b.commission_percent, b.platform_fee, b.payout_amount, b.get_payout_status_display(), b.payout_reference,
+            b.payout_paid_at.strftime("%Y-%m-%d") if b.payout_paid_at else ""]])
+    return response
+
+
 _original_get_urls = admin.site.get_urls
 
 
 def _get_urls_with_analytics():
-    return [path("analytics/", admin.site.admin_view(analytics_view), name="photopholio_analytics")] + _original_get_urls()
+    wrap = admin.site.admin_view
+    return [
+        path("analytics/", wrap(analytics_view), name="photopholio_analytics"),
+        path("payouts/", wrap(payouts_view), name="photopholio_payouts"),
+        path("payouts/export/", wrap(payouts_csv_view), name="photopholio_payouts_csv"),
+        path("disputes/", wrap(disputes_view), name="photopholio_disputes"),
+        path("disputes/<int:pk>/resolve/", wrap(dispute_resolve_view), name="photopholio_dispute_resolve"),
+        path("payouts/<int:pk>/pay/", wrap(payout_pay_view), name="photopholio_payout_pay"),
+        path("payouts/<int:pk>/recovered/", wrap(payout_recovered_view), name="photopholio_payout_recovered"),
+    ] + _original_get_urls()
 
 
 admin.site.get_urls = _get_urls_with_analytics

@@ -3,7 +3,7 @@
 {% block content %}
 <div class="container section">
   <h1 style="font-size:clamp(2.2rem,4.5vw,3.2rem)" class="mb-1">Photographers</h1>
-  <p class="muted mb-4">{{ page.paginator.count }} match{{ page.paginator.count|pluralize:"es," }} right now</p>
+  <p class="muted mb-4">{{ page.paginator.count }} match{{ page.paginator.count|pluralize:"es," }} right now.</p>
   {% if wanted_date %}<p class="mb-4"><span class="chip" style="cursor:default">Free on {{ wanted_date|date:"l, j F Y" }}</span> <a class="small ms-2" href="?{{ querystring_without_date }}">Clear date</a></p>{% endif %}
   <div class="row g-4">
     <aside class="col-lg-3">

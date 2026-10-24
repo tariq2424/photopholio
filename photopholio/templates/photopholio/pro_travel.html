@@ -1,0 +1,35 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}Travel charges{% endblock %}
+{% block content %}
+<div class="container section" style="max-width:760px">
+  <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-1">Travel charges</h1>
+  <p class="muted mb-4 measure">When an event is outside your city, the <strong>customer pays the travel</strong>. You decide how far you go and what it costs.
+    The customer sees the total before sending a request, and an accepted booking keeps the charges it was made with.
+    <a href="{% url 'pro_dashboard' %}">Back to dashboard</a></p>
+  <div class="row g-4">
+    <div class="col-lg-7">
+      <div class="panel">
+        <form method="post" novalidate>{% csrf_token %}
+          {% for e in form.non_field_errors %}<div class="alert alert-danger">{{ e }}</div>{% endfor %}
+          {% for f in form %}
+            <div class="mb-3">
+              <label class="form-label" for="{{ f.id_for_label }}">{{ f.label }}</label>{{ f }}
+              {% if f.help_text %}<div class="form-text">{{ f.help_text }}</div>{% endif %}
+              {% for e in f.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+            </div>
+          {% endfor %}
+          <button class="btn btn-primary" type="submit">Save travel charges</button>
+        </form>
+      </div>
+    </div>
+    <div class="col-lg-5">
+      <div class="panel">
+        <h3 style="font-size:1.2rem">What customers see now</h3>
+        <ul class="ps-3 mb-0">{% for line in preview %}<li>{{ line }}</li>{% endfor %}</ul>
+        <p class="small muted mt-3 mb-0">Example: you are in {{ ph.city.name }}, the event is 3 days in another state, travel charge &#8377;6,000 and stay &#8377;1,500 a day. The customer pays your service price + &#8377;6,000 + &#8377;4,500.
+          PhotoPholio's commission is taken on your service price only, never on travel.</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

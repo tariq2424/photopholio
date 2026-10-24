@@ -98,6 +98,8 @@ class Photographer(models.Model):
     name = models.CharField(max_length=120)
     slug = models.SlugField(max_length=140, unique=True, blank=True)
     bio = models.TextField()
+    tags = models.CharField("keywords", max_length=160, blank=True,
+                            help_text="Words customers may search for, separated by commas. For example: outdoor, candid, pre-wedding, drone.")
     specialities = models.CharField(max_length=30, choices=SPECIALITY_CHOICES)
     experience_years = models.PositiveIntegerField(default=1)
     rating = models.FloatField(default=0, validators=[MinValueValidator(0), MaxValueValidator(5)])
@@ -106,6 +108,26 @@ class Photographer(models.Model):
     image = models.ImageField(upload_to="photographers/", blank=True)
     price_per_day = models.PositiveIntegerField(default=5000, help_text="Price in INR for one event day")
     is_available = models.BooleanField(default=True)
+
+    # --- travel policy (see travel.py): the customer pays travel, the photographer sets the price ---
+    TRAVEL_SCOPE_CHOICES = [
+        ("city", "Only in my city"),
+        ("state", "Anywhere in my state"),
+        ("india", "Anywhere in India"),
+    ]
+    # Money: the admin pays photographers out (see money.py). The percent is empty for "use the site default".
+    commission_percent = models.PositiveSmallIntegerField("commission % (override)", null=True, blank=True,
+                                                          validators=[MaxValueValidator(50)],
+                                                          help_text="Leave empty to use the site default.")
+    payout_details = models.CharField("payout details", max_length=120, blank=True,
+                                      help_text="UPI ID or bank account where earnings are sent. Only the admin sees this.")
+    travel_scope = models.CharField("where I take events", max_length=5, choices=TRAVEL_SCOPE_CHOICES, default="india")
+    travel_fee_state = models.PositiveIntegerField("travel charge: other city in my state", default=0,
+                                                   help_text="One charge for the whole trip, in INR. 0 means no charge.")
+    travel_fee_india = models.PositiveIntegerField("travel charge: another state", default=0,
+                                                   help_text="One charge for the whole trip, in INR. 0 means no charge.")
+    stay_fee_per_day = models.PositiveIntegerField("stay and food per day away", default=0,
+                                                   help_text="Added for every day of an event outside your city. 0 if the customer arranges it.")
 
     # --- photographer accounts and admin approval -------------------------------
     # The login account that owns this profile (empty for profiles added by the admin).
@@ -146,6 +168,10 @@ class Photographer(models.Model):
         """Packages customers can pick, Basic first. Uses prefetched data when a view asked for it."""
         order = Package.TIER_ORDER
         return sorted((p for p in self.packages.all() if p.is_active), key=lambda p: order[p.tier])
+
+    @property
+    def tag_list(self):
+        return [t.strip() for t in self.tags.split(",") if t.strip()][:8]
 
     @property
     def starting_price(self):
@@ -246,7 +272,16 @@ class Booking(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="bookings")
     photographer = models.ForeignKey(Photographer, on_delete=models.CASCADE, related_name="bookings")
     booking_date = models.DateField(default=timezone.localdate)
-    event_date = models.DateField()
+    # The first day of the event. A multi-day event also has end_date (the last day); a one-day event has end_date == event_date.
+    event_date = models.DateField("first day")
+    end_date = models.DateField("last day", null=True, blank=True)
+    # Where the shoot is. India only for now. Old bookings made before this existed simply have these empty.
+    start_time = models.TimeField("event starts at", null=True, blank=True)
+    venue_name = models.CharField(max_length=120, blank=True)
+    event_address = models.TextField(blank=True)
+    event_city = models.CharField(max_length=100, blank=True)
+    event_state = models.ForeignKey("State", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    event_pincode = models.CharField(max_length=6, blank=True)
     tool = models.CharField("equipment / requirements", max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="pending")
@@ -254,7 +289,44 @@ class Booking(models.Model):
     # or deleting a package later never changes a booking that already exists.
     package = models.ForeignKey("Package", on_delete=models.SET_NULL, null=True, blank=True, related_name="bookings")
     package_name = models.CharField(max_length=60, blank=True)
-    price = models.PositiveIntegerField(null=True, blank=True)
+    price = models.PositiveIntegerField(null=True, blank=True)  # the TOTAL for all days (day_rate x days)
+    day_rate = models.PositiveIntegerField(null=True, blank=True)  # price of one day when it was booked
+    # Travel and stay charged to the customer for an event outside the photographer's city (see travel.py). Added to the
+    # service price. A snapshot, like price: changing the photographer's travel policy later never changes it.
+    travel_fee = models.PositiveIntegerField(default=0)
+    travel_zone = models.CharField(max_length=6, blank=True)
+    # Money split, worked out when the customer pays and settled as the booking ends (see money.py).
+    # held = paid, shoot not done yet; ready = the admin can pay the photographer; paid = sent;
+    # void = refunded in full, nothing to pay; recover = refunded after the photographer was already paid.
+    PAYOUT_CHOICES = [("", "Not paid yet"), ("held", "Held"), ("ready", "Ready to pay"), ("paid", "Paid out"),
+                      ("void", "Nothing to pay"), ("recover", "To recover")]
+    commission_percent = models.PositiveSmallIntegerField(null=True, blank=True)
+    platform_fee = models.PositiveIntegerField(default=0)       # PhotoPholio's commission
+    payout_amount = models.PositiveIntegerField(default=0)      # what the photographer receives
+    payout_status = models.CharField(max_length=8, blank=True, choices=PAYOUT_CHOICES, default="", db_index=True)
+    payout_reference = models.CharField(max_length=60, blank=True)   # UTR / transaction id of the transfer
+    payout_paid_at = models.DateTimeField(null=True, blank=True)
+    payout_note = models.CharField(max_length=200, blank=True)
+
+    # Shoot tracking and confirmation (see tracking.py). The photographer marks the shoot completed; the customer then
+    # confirms it (or 48 hours pass); only then does the photographer's money become payable. A reported problem stops it.
+    DISPUTE_KIND_CHOICES = [("not_arrived", "The photographer did not arrive"),
+                            ("quality", "The shoot did not go as agreed"),
+                            ("other", "Something else")]
+    DISPUTE_OUTCOME_CHOICES = [("pay", "Paid the photographer"), ("refund", "Refunded the customer"),
+                               ("dismiss", "Report dismissed"),
+                               ("closed", "Closed with the booking")]
+    completed_at = models.DateTimeField(null=True, blank=True)            # when the photographer marked it completed
+    customer_confirmed_at = models.DateTimeField(null=True, blank=True)   # when the customer confirmed (or the 48 h passed)
+    customer_confirmed_by_customer = models.BooleanField(default=False)   # False when it was confirmed automatically
+    dispute_status = models.CharField(max_length=8, blank=True, choices=[("", "None"), ("open", "Open"), ("resolved", "Resolved")])
+    dispute_kind = models.CharField(max_length=12, blank=True, choices=DISPUTE_KIND_CHOICES)
+    dispute_text = models.TextField(blank=True)
+    dispute_opened_at = models.DateTimeField(null=True, blank=True)
+    dispute_outcome = models.CharField(max_length=8, blank=True, choices=DISPUTE_OUTCOME_CHOICES)
+    dispute_note = models.TextField(blank=True, help_text="The admin's decision and why. The customer and photographer are told.")
+    dispute_resolved_at = models.DateTimeField(null=True, blank=True)
+    dispute_resolved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     accepted_at = models.DateTimeField(null=True, blank=True)
     cancelled_by = models.CharField(max_length=12, choices=CANCELLED_BY_CHOICES, blank=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)
@@ -268,7 +340,49 @@ class Booking(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.user.username} > {self.photographer.name} on {self.event_date}"
+        return f"{self.user.username} > {self.photographer.name} on {self.date_label}"
+
+    def save(self, *args, **kwargs):
+        # A one-day booking stores end_date = event_date, so every date check can treat bookings as ranges.
+        if self.end_date is None:
+            self.end_date = self.event_date
+            if kwargs.get("update_fields") is not None:
+                kwargs["update_fields"] = list(kwargs["update_fields"]) + ["end_date"]
+        super().save(*args, **kwargs)
+
+    @property
+    def last_date(self):
+        return self.end_date or self.event_date
+
+    @property
+    def days(self):
+        return (self.last_date - self.event_date).days + 1
+
+    @property
+    def is_multi_day(self):
+        return self.days > 1
+
+    def day_list(self):
+        from datetime import timedelta
+        return [self.event_date + timedelta(days=i) for i in range(self.days)]
+
+    @property
+    def date_label(self):
+        """'12 Dec 2026' or '12 - 15 Dec 2026' (or across months / years when needed)."""
+        a, b = self.event_date, self.last_date
+        if a == b:
+            return f"{a.day} {a:%b %Y}"
+        if (a.year, a.month) == (b.year, b.month):
+            return f"{a.day} - {b.day} {b:%b %Y}"
+        if a.year == b.year:
+            return f"{a.day} {a:%b} - {b.day} {b:%b %Y}"
+        return f"{a.day} {a:%b %Y} - {b.day} {b:%b %Y}"
+
+    @property
+    def place(self):
+        """'Venue, City, State' for display. Empty for bookings made before addresses existed."""
+        bits = [self.venue_name, self.event_city, self.event_state.name if self.event_state_id else ""]
+        return ", ".join(b for b in bits if b)
 
     @property
     def payment_deadline(self):
@@ -279,17 +393,73 @@ class Booking(models.Model):
         return None
 
     @property
+    def has_open_dispute(self):
+        return self.dispute_status == "open"
+
+    @property
+    def confirm_deadline(self):
+        """After this the shoot counts as confirmed even if the customer did nothing."""
+        if self.completed_at and not self.customer_confirmed_at:
+            from datetime import timedelta
+            from .policy import CONFIRM_WINDOW_HOURS
+            return self.completed_at + timedelta(hours=CONFIRM_WINDOW_HOURS)
+        return None
+
+    @property
+    def awaiting_confirmation(self):
+        return self.status == "completed" and self.completed_at is not None and not self.customer_confirmed_at
+
+    def can_report(self, today=None):
+        """The customer may report a problem from the first day of the event until the photographer has been paid."""
+        today = today or timezone.localdate()
+        return (self.status in ("confirmed", "completed") and self.dispute_status == ""
+                and self.payout_status in ("held", "ready") and today >= self.event_date)
+
+    def day_states(self):
+        """One dict per event day for display: {date, state, arrived_at, started_at, finished_at, seen}. Never writes to the database."""
+        rows = {d.date: d for d in self.shoot_days.all()}
+        out = []
+        for day in self.day_list():
+            r = rows.get(day)
+            out.append({"date": day, "state": r.state if r else "upcoming", "arrived_at": r.arrived_at if r else None,
+                        "started_at": r.started_at if r else None, "finished_at": r.finished_at if r else None,
+                        "seen": bool(r and r.customer_seen_at)})
+        return out
+
+    def todays_step(self, today=None):
+        """The one button the photographer should see today: arrived, start, finish, or '' (nothing to do)."""
+        today = today or timezone.localdate()
+        if self.status != "confirmed" or today not in self.day_list():
+            return ""
+        row = next((d for d in self.shoot_days.all() if d.date == today), None)
+        state = row.state if row else "upcoming"
+        return {"upcoming": "arrived", "arrived": "start", "in_progress": "finish"}.get(state, "")
+
+    @property
     def paid_payment(self):
         return self.payments.filter(status="completed").order_by("-payment_date").first()
 
     @property
     def can_complete(self):
         """A shoot can only be marked completed once its date has arrived."""
-        return self.status == "confirmed" and self.event_date <= timezone.localdate()
+        return self.status == "confirmed" and self.last_date <= timezone.localdate()
 
     @property
     def amount(self):
         # Bookings made before packages existed have no snapshot (price is empty): fall back to the day rate.
+        return self.service_price + self.travel_fee
+
+    @property
+    def earnings(self):
+        """(percent, commission, payout) as the photographer sees it: the real figures once paid, otherwise a preview."""
+        from . import money
+        if self.payout_status:
+            return money.Split(self.commission_percent or 0, self.platform_fee, self.payout_amount)
+        return money.preview(self)
+
+    @property
+    def service_price(self):
+        """The photographer's fee for the shoot itself (all days), without travel."""
         return self.price if self.price is not None else self.photographer.price_per_day
 
     @property
@@ -340,6 +510,23 @@ class RescheduleRequest(models.Model):
 
     def __str__(self):
         return f"{self.booking_id}: {self.old_date} -> {self.new_date} ({self.status})"
+
+    @property
+    def new_end(self):
+        """The booking keeps its length, so moving a 4-day event to the 20th means 20th to 23rd."""
+        from datetime import timedelta
+        return self.new_date + timedelta(days=self.booking.days - 1)
+
+    @property
+    def new_label(self):
+        from datetime import timedelta
+        days = self.booking.days
+        if days == 1:
+            return f"{self.new_date.day} {self.new_date:%b %Y}"
+        b = self.new_end
+        if (self.new_date.year, self.new_date.month) == (b.year, b.month):
+            return f"{self.new_date.day} - {b.day} {b:%b %Y}"
+        return f"{self.new_date.day} {self.new_date:%b %Y} - {b.day} {b:%b %Y}"
 
 
 class Payment(models.Model):
@@ -475,3 +662,47 @@ class Package(models.Model):
 
     def __str__(self):
         return f"{self.photographer.name}: {self.get_tier_display()} (Rs.{self.price})"
+
+
+class ShootDay(models.Model):
+    """What happened on one day of a booking: the photographer's three taps. One row per day, made when first needed."""
+    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name="shoot_days")
+    date = models.DateField()
+    arrived_at = models.DateTimeField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    customer_seen_at = models.DateTimeField(null=True, blank=True)  # the customer tapped "Yes, they are here"
+
+    class Meta:
+        ordering = ["date"]
+        unique_together = ("booking", "date")
+
+    def __str__(self):
+        return f"{self.booking_id} {self.date}: {self.state}"
+
+    @property
+    def state(self):
+        if self.finished_at:
+            return "finished"
+        if self.started_at:
+            return "in_progress"
+        if self.arrived_at:
+            return "arrived"
+        return "upcoming"
+
+
+class ShootEvent(models.Model):
+    """The audit trail: who did what and when, on a booking. Rows are only ever added, never edited."""
+    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name="shoot_events")
+    day = models.DateField(null=True, blank=True)
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    actor_role = models.CharField(max_length=12)  # photographer / customer / admin / system
+    action = models.CharField(max_length=30)
+    note = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self):
+        return f"{self.booking_id} {self.actor_role}: {self.action}"

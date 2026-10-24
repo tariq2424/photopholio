@@ -1,0 +1,1 @@
+{% if b.event_address %}<div class="small muted"><i class="bi bi-geo-alt"></i> {% if b.venue_name %}{{ b.venue_name }}, {% endif %}{{ b.event_address }}, {{ b.event_city }}{% if b.event_state %}, {{ b.event_state.name }}{% endif %} {{ b.event_pincode }}</div>{% endif %}

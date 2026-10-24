@@ -1,0 +1,54 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<div class="row">
+  <div class="col-md-4 mb-3"><div class="card h-100 {% if ready_total %}border-warning{% endif %}"><div class="card-body">
+    <div class="text-muted small">Ready to pay now</div><div class="h3 mb-0">&#8377;{{ ready_total }}</div>
+    <div class="small text-muted">Shoots are done. Send the money, then note the reference below.</div></div></div></div>
+  <div class="col-md-4 mb-3"><div class="card h-100"><div class="card-body">
+    <div class="text-muted small">Held (shoot not done, or not confirmed yet)</div><div class="h3 mb-0">&#8377;{{ held.money }}</div>
+    <div class="small text-muted">{{ held.n }} booking{{ held.n|pluralize }} &middot; commission on these: &#8377;{{ held.fee }}<br><a href="{% url 'admin:photopholio_disputes' %}">Waiting for customers, and reported problems</a></div></div></div></div>
+  <div class="col-md-4 mb-3"><div class="card h-100"><div class="card-body">
+    <div class="text-muted small">Commission rate</div><div class="h3 mb-0">{{ percent }}%</div>
+    <div class="small"><a href="{% url 'admin:photopholio_payouts_csv' %}">Download all payouts (CSV)</a></div></div></div></div>
+</div>
+
+<div class="card mb-4"><div class="card-header"><strong>Ready to pay</strong></div><div class="card-body p-0">
+{% for g in groups %}
+  <div class="p-3 border-bottom">
+    <div class="d-flex flex-wrap justify-content-between">
+      <div><strong>{{ g.photographer.name }}</strong>
+        <div class="small {% if g.photographer.payout_details %}text-muted{% else %}text-danger{% endif %}">
+          {% if g.photographer.payout_details %}Send to: <strong>{{ g.photographer.payout_details }}</strong>{% else %}No payout details yet. Ask them to add them in their profile.{% endif %}</div></div>
+      <div class="h5 mb-0">&#8377;{{ g.total }}</div>
+    </div>
+    <table class="table table-sm mt-2 mb-0"><tbody>
+    {% for b in g.bookings %}
+      <tr>
+        <td>#{{ b.pk }} &middot; {{ b.date_label }}<div class="small text-muted">{{ b.user.username }} paid &#8377;{{ b.amount }}, commission &#8377;{{ b.platform_fee }} ({{ b.commission_percent }}%){% if b.payout_note %} &middot; {{ b.payout_note }}{% endif %}</div></td>
+        <td><strong>&#8377;{{ b.payout_amount }}</strong></td>
+        <td class="text-right"><form method="post" action="{% url 'admin:photopholio_payout_pay' b.pk %}" class="form-inline justify-content-end">{% csrf_token %}
+          <input class="form-control form-control-sm mr-2" name="reference" placeholder="UTR / transaction id" maxlength="60" required aria-label="Transfer reference">
+          <button class="btn btn-sm btn-success" type="submit">Mark paid</button></form></td>
+      </tr>
+    {% endfor %}
+    </tbody></table>
+  </div>
+{% empty %}<p class="p-3 mb-0 text-muted">Nothing to pay right now.</p>{% endfor %}
+</div></div>
+
+{% if recover %}
+<div class="card border-danger mb-4"><div class="card-header"><strong>To recover from photographers ({{ recover|length }})</strong></div><div class="card-body p-0">
+  <table class="table table-sm mb-0"><tbody>
+  {% for b in recover %}<tr><td>#{{ b.pk }} {{ b.photographer.name }} &middot; {{ b.date_label }}<div class="small text-danger">{{ b.payout_note }}</div></td>
+    <td class="text-right"><form method="post" action="{% url 'admin:photopholio_payout_recovered' b.pk %}" class="form-inline justify-content-end">{% csrf_token %}
+      <input class="form-control form-control-sm mr-2" name="note" placeholder="Note (optional)" maxlength="100" aria-label="Note">
+      <button class="btn btn-sm btn-outline-danger" type="submit">Mark recovered</button></form></td></tr>{% endfor %}
+  </tbody></table></div></div>
+{% endif %}
+
+<div class="card mb-3"><div class="card-header"><strong>Recently paid</strong></div><div class="card-body p-0">
+{% if recent %}<table class="table table-sm mb-0"><thead><tr><th>Photographer</th><th>Event</th><th>Amount</th><th>Reference</th><th>Paid on</th></tr></thead><tbody>
+  {% for b in recent %}<tr><td>{{ b.photographer.name }}</td><td>{{ b.date_label }}</td><td>&#8377;{{ b.payout_amount }}</td><td>{{ b.payout_reference }}</td><td>{{ b.payout_paid_at|date:"j M Y" }}</td></tr>{% endfor %}
+</tbody></table>{% else %}<p class="p-3 mb-0 text-muted">No payouts sent yet.</p>{% endif %}</div></div>
+<p class="small text-muted">This is a ledger. The site's checkout is a demo, so you send the money yourself (UPI or bank transfer) and write the reference here; the photographer is emailed.</p>
+{% endblock %}

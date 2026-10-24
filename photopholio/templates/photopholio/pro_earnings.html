@@ -1,0 +1,47 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}Earnings{% endblock %}
+{% block content %}
+<div class="container section" style="max-width:960px">
+  <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-1">Earnings</h1>
+  <p class="muted mb-4 measure">PhotoPholio keeps <strong>{{ percent }}%</strong> of your service price as commission. Travel and stay money you charged is yours in full.
+    The customer's payment is held until the shoot is completed; then the admin sends it to you. <a href="{% url 'pro_dashboard' %}">Back to dashboard</a></p>
+
+  {% if missing_payout %}
+  <div class="alert alert-warning">Add where to send your earnings (UPI ID or bank account) in <a href="{% url 'pro_profile' %}">your profile</a>, otherwise we cannot pay you.</div>
+  {% endif %}
+
+  <div class="stat-row">
+    <div class="stat"><span>Held until the shoot</span><strong>&#8377;{{ totals.held.money|default:0 }}</strong><small>{{ totals.held.n|default:0 }} booking{{ totals.held.n|default:0|pluralize }}</small></div>
+    <div class="stat"><span>Being paid to you</span><strong>&#8377;{{ totals.ready.money|default:0 }}</strong><small>{{ totals.ready.n|default:0 }} booking{{ totals.ready.n|default:0|pluralize }}</small></div>
+    <div class="stat"><span>Paid to you</span><strong>&#8377;{{ totals.paid.money|default:0 }}</strong><small>{{ totals.paid.n|default:0 }} booking{{ totals.paid.n|default:0|pluralize }}</small></div>
+  </div>
+
+  <h2 class="mt-4 mb-3" style="font-size:1.4rem">Bookings and payouts</h2>
+  {% if rows %}
+  <div class="table-responsive"><table class="table align-middle">
+    <thead><tr><th>Event</th><th>Customer</th><th class="text-end">Customer paid</th><th class="text-end">Commission</th><th class="text-end">You get</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for b in rows %}
+      <tr>
+        <td>{{ b.date_label }}</td>
+        <td>{{ b.user.first_name|default:b.user.username }}</td>
+        <td class="text-end">&#8377;{{ b.amount }}</td>
+        <td class="text-end">&#8377;{{ b.platform_fee }}</td>
+        <td class="text-end"><strong>&#8377;{{ b.payout_amount }}</strong></td>
+        <td>{% if b.payout_status == 'held' %}Held until the shoot
+            {% elif b.payout_status == 'ready' %}Being paid to you
+            {% elif b.payout_status == 'paid' %}Paid{% if b.payout_paid_at %} {{ b.payout_paid_at|date:"j M Y" }}{% endif %}{% if b.payout_reference %}<div class="small muted">Ref {{ b.payout_reference }}</div>{% endif %}
+            {% elif b.payout_status == 'void' %}Refunded
+            {% else %}Needs attention{% endif %}
+            {% if b.payout_note and b.payout_status != 'paid' %}<div class="small muted">{{ b.payout_note }}</div>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody></table></div>
+  {% else %}<p class="muted">Nothing here yet. Your earnings show up once a customer pays for a booking.</p>{% endif %}
+
+  {% if upcoming %}
+  <h2 class="mt-4 mb-2" style="font-size:1.2rem">Coming up, not paid yet</h2>
+  <ul class="ps-3">{% for b in upcoming %}{% with e=b.earnings %}<li>{{ b.date_label }}, {{ b.user.first_name|default:b.user.username }}: you would earn &#8377;{{ e.payout }} ({{ b.get_status_display|lower }}).</li>{% endwith %}{% endfor %}</ul>
+  {% endif %}
+</div>
+{% endblock %}

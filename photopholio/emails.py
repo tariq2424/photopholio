@@ -28,6 +28,23 @@ def _day(d):
     return d.strftime("%A, %d %B %Y")
 
 
+def _when(b):
+    """One day: 'Saturday, 12 December 2026'. Several days: '12 - 15 Dec 2026 (4 days)'."""
+    return _day(b.event_date) if not b.is_multi_day else f"{b.date_label} ({b.days} days)"
+
+
+def _new_when(r):
+    return _day(r.new_date) if r.booking.days == 1 else f"{r.new_label} ({r.booking.days} days)"
+
+
+def _where(b):
+    """The full venue line for emails, or '' for bookings made before addresses existed."""
+    if not b.event_address:
+        return ""
+    state = b.event_state.name if b.event_state_id else ""
+    return ", ".join(x for x in [b.venue_name, b.event_address, b.event_city, state] if x) + f" {b.event_pincode}".rstrip()
+
+
 def _money(n):
     return f"Rs.{n}"
 
@@ -54,7 +71,12 @@ def _booking_details(b):
     rows = [("Photographer", b.photographer.name)]
     if b.package_name:
         rows.append(("Package", b.package_name))
-    return rows + [("Event date", _day(b.event_date)), ("Amount", _money(b.amount))]
+    rows += [("Event date", _when(b))]
+    if _where(b):
+        rows.append(("Venue", _where(b)))
+    if b.travel_fee:
+        rows += [("Service", _money(b.service_price)), ("Travel and stay", _money(b.travel_fee))]
+    return rows + [("Total" if b.travel_fee else "Amount", _money(b.amount))]
 
 
 def _photographer_email(b):
@@ -72,9 +94,11 @@ def booking_requested(b):
           _booking_details(b), ("View my bookings", _url("my_bookings")))
     _send(_photographer_email(b), "New booking request",
           "You have a new booking request",
-          [f"{_name(b.user)} would like to book you for {_day(b.event_date)}.",
+          [f"{_name(b.user)} would like to book you for {_when(b)}.",
            "Accept or decline it from your dashboard. If you accept, they have 24 hours to pay."],
-          [("Date", _day(b.event_date)), ("Customer", _name(b.user)), ("Amount", _money(b.amount))]
+          [("Date", _when(b))] + ([("Venue", _where(b))] if _where(b) else [])
+          + [("Customer", _name(b.user)), ("Service price", _money(b.service_price))]
+          + ([("Travel and stay (paid by the customer)", _money(b.travel_fee))] if b.travel_fee else [])
           + ([("Notes", b.tool)] if b.tool else []),
           ("Open dashboard", _url("pro_dashboard")))
 
@@ -83,7 +107,7 @@ def booking_accepted(b):
     from .policy import PAYMENT_WINDOW_HOURS
     _send(b.user.email, f"{b.photographer.name} accepted your request",
           "Good news, your request was accepted",
-          [f"Hi {_name(b.user)}, {b.photographer.name} can do {_day(b.event_date)}.",
+          [f"Hi {_name(b.user)}, {b.photographer.name} can do {_when(b)}.",
            f"Please pay within {PAYMENT_WINDOW_HOURS} hours to confirm the date. After that the request lapses and nothing is charged."],
           _booking_details(b), ("Pay now", _url("payment", b.pk)))
 
@@ -91,7 +115,7 @@ def booking_accepted(b):
 def booking_declined(b):
     _send(b.user.email, "Your request was declined",
           "Your request could not be taken",
-          [f"Hi {_name(b.user)}, {b.photographer.name} is not able to take {_day(b.event_date)}.",
+          [f"Hi {_name(b.user)}, {b.photographer.name} is not able to take {_when(b)}.",
            "You were not charged. There are other photographers who may be free that day."],
           None, ("Find another photographer", _url("photographer_list")))
 
@@ -99,12 +123,12 @@ def booking_declined(b):
 def reschedule_requested(r):
     b = r.booking
     _send(_photographer_email(b), "Reschedule request", "A customer asked to change their date",
-          [f"{_name(b.user)} would like to move their booking from {_day(r.old_date)} to {_day(r.new_date)}.",
+          [f"{_name(b.user)} would like to move their booking from {_day(r.old_date)} to {_new_when(r)}.",
            "Accept or decline it from your dashboard. Nothing changes until you accept."],
-          [("Current date", _day(r.old_date)), ("Requested date", _day(r.new_date)), ("Customer", _name(b.user))]
+          [("Current date", _day(r.old_date)), ("Requested date", _new_when(r)), ("Customer", _name(b.user))]
           + ([("Reason", r.reason)] if r.reason else []), ("Open dashboard", _url("pro_dashboard")))
     _send(b.user.email, "Reschedule request sent", "Your request is on its way",
-          [f"Hi {_name(b.user)}, we asked {b.photographer.name} to move your booking to {_day(r.new_date)}.",
+          [f"Hi {_name(b.user)}, we asked {b.photographer.name} to move your booking to {_new_when(r)}.",
            f"Your booking stays on {_day(r.old_date)} until they accept."],
           None, ("View my bookings", _url("my_bookings")))
 
@@ -113,14 +137,14 @@ def reschedule_accepted(r):
     b = r.booking
     _send(b.user.email, "Your new date is confirmed", "Your booking was moved",
           [f"Hi {_name(b.user)}, {b.photographer.name} accepted the change.",
-           f"Your booking is now on {_day(r.new_date)}. Your payment and price stay the same."],
+           f"Your booking is now on {_new_when(r)}. Your payment and price stay the same."],
           _booking_details(b), ("View my bookings", _url("my_bookings")))
 
 
 def reschedule_declined(r):
     b = r.booking
     _send(b.user.email, "Reschedule request declined", "The date could not be changed",
-          [f"Hi {_name(b.user)}, {b.photographer.name} could not move your booking to {_day(r.new_date)}.",
+          [f"Hi {_name(b.user)}, {b.photographer.name} could not move your booking to {_new_when(r)}.",
            f"Reason: {r.decline_reason}" if r.decline_reason else "",
            f"Your booking is still on {_day(r.old_date)}. You can send a new request for another day, or cancel under the cancellation policy."],
           None, ("View my bookings", _url("my_bookings")))
@@ -144,13 +168,13 @@ def payment_received(b, payment):
     _send(b.user.email, "Payment received, booking confirmed",
           "Your booking is confirmed",
           [f"Hi {_name(b.user)}, we have received your payment of {_money(payment.amount)}.",
-           f"{b.photographer.name} is booked for {_day(b.event_date)}."],
+           f"{b.photographer.name} is booked for {_when(b)}."],
           _booking_details(b) + [("Payment method", payment.get_payment_method_display())],
           ("View my bookings", _url("my_bookings")))
     _send(_photographer_email(b), "Booking confirmed and paid",
           "A booking was paid",
-          [f"{_name(b.user)} has paid for {_day(b.event_date)}. The date is confirmed."],
-          [("Date", _day(b.event_date)), ("Customer", _name(b.user)), ("Amount", _money(b.amount))],
+          [f"{_name(b.user)} has paid for {_when(b)}. The date is confirmed."],
+          [("Date", _when(b))] + ([("Venue", _where(b))] if _where(b) else []) + [("Customer", _name(b.user)), ("Amount", _money(b.amount))],
           ("Open dashboard", _url("pro_dashboard")))
 
 
@@ -172,11 +196,11 @@ def booking_cancelled(b, by):
               [f"Hi {_name(b.user)}, you cancelled your booking with {b.photographer.name}.", _refund_line(payment)],
               details, ("Cancellation policy", _url("cancellation_policy")))
         _send(_photographer_email(b), "A booking was cancelled", "A customer cancelled",
-              [f"{_name(b.user)} cancelled the booking for {_day(b.event_date)}. The date is free again."],
-              [("Date", _day(b.event_date)), ("Customer", _name(b.user))], ("Open dashboard", _url("pro_dashboard")))
+              [f"{_name(b.user)} cancelled the booking for {_when(b)}. The date is free again."],
+              [("Date", _when(b)), ("Customer", _name(b.user))], ("Open dashboard", _url("pro_dashboard")))
     elif by == "photographer":
         _send(b.user.email, "Your photographer cancelled", "We are sorry, your booking was cancelled",
-              [f"Hi {_name(b.user)}, {b.photographer.name} had to cancel {_day(b.event_date)}.",
+              [f"Hi {_name(b.user)}, {b.photographer.name} had to cancel {_when(b)}.",
                f"Reason given: {b.cancel_reason}" if b.cancel_reason else "",
                _refund_line(payment)],
               details, ("Find another photographer", _url("photographer_list")))
@@ -195,15 +219,62 @@ def refund_processed(payment):
     b = payment.booking
     _send(b.user.email, "Your refund has been processed", "Your refund is done",
           [f"Hi {_name(b.user)}, we have processed your refund of {_money(payment.refund_amount)}."],
-          [("Booking", f"{b.photographer.name}, {_day(b.event_date)}"), ("Refund", _money(payment.refund_amount))],
+          [("Booking", f"{b.photographer.name}, {_when(b)}"), ("Refund", _money(payment.refund_amount))],
           ("My bookings", _url("my_bookings")))
 
 
 def booking_completed(b):
-    _send(b.user.email, "How was your shoot?", "Your shoot is complete",
+    from .policy import CONFIRM_WINDOW_HOURS
+    _send(b.user.email, "Please confirm your shoot", "Your shoot is marked as completed",
           [f"Hi {_name(b.user)}, {b.photographer.name} has marked your shoot as completed.",
-           "Your review helps other customers choose, and it only takes a minute."],
-          None, ("Write a review", _url("feedback_create", b.pk)))
+           f"Please confirm that it took place, or report a problem, from My bookings. If we do not hear from you in {CONFIRM_WINDOW_HOURS} hours, "
+           "we will treat it as confirmed and pay the photographer.",
+           f"Once you are happy, a review helps other customers choose: {_url('feedback_create', b.pk)}"],
+          None, ("Open my bookings", _url("my_bookings")))
+
+
+def photographer_arrived(b, day):
+    _send(b.user.email, f"{b.photographer.name} has arrived", "Your photographer says they have arrived",
+          [f"Hi {_name(b.user)}, {b.photographer.name} has marked themselves as arrived for {day.date:%A, %d %B}.",
+           "This is the photographer's own update. If they are not there, you can report it from My bookings."],
+          None, ("Open my bookings", _url("my_bookings")))
+
+
+def customer_confirmed(b, automatic=False):
+    from .policy import CONFIRM_WINDOW_HOURS
+    why = (f"{_name(b.user)} did not answer within {CONFIRM_WINDOW_HOURS} hours, so the shoot was confirmed automatically."
+           if automatic else f"{_name(b.user)} confirmed that the shoot took place.")
+    _send(_photographer_email(b), "Shoot confirmed", "Your shoot is confirmed",
+          [why, f"Your share of {_money(b.payout_amount)} is now ready to be paid. The admin sends it and notes the transfer."],
+          None, ("Open dashboard", _url("pro_dashboard")))
+
+
+def _staff_emails():
+    from django.contrib.auth.models import User
+    return list(User.objects.filter(is_superuser=True, is_active=True).exclude(email="").values_list("email", flat=True))
+
+
+def dispute_opened(b):
+    body = [f"{_name(b.user)} reported a problem with the booking for {b.photographer.name} on {_when(b)}.",
+            f"{b.get_dispute_kind_display()}: {b.dispute_text}",
+            "The photographer's money is on hold until the admin decides."]
+    for address in _staff_emails():
+        _send(address, "Reported problem to review", "A customer reported a problem", body, None,
+              ("Open Disputes", settings.SITE_URL + reverse("admin:photopholio_disputes")))
+    _send(_photographer_email(b), "A customer reported a problem", "A problem was reported on your booking",
+          [f"{_name(b.user)} reported a problem with the booking on {_when(b)}.",
+           "Nobody has been blamed: the admin will look at both sides. Your payout waits until then."],
+          None, ("Open dashboard", _url("pro_dashboard")))
+
+
+def dispute_resolved(b):
+    decisions = {"pay": "The photographer will be paid.", "refund": "The customer is being refunded in full.",
+                 "dismiss": "The report was dismissed and the booking continues normally."}
+    text = [decisions.get(b.dispute_outcome, "The report is closed."), f"Admin note: {b.dispute_note}"]
+    _send(b.user.email, "Your report was reviewed", "We reviewed your report", [f"Hi {_name(b.user)}."] + text,
+          None, ("Open my bookings", _url("my_bookings")))
+    _send(_photographer_email(b), "The report was reviewed", "The report on your booking was reviewed", text,
+          None, ("Open dashboard", _url("pro_dashboard")))
 
 
 # ---------------------------------------------------------------- photographer profile review
@@ -221,3 +292,15 @@ def profile_rejected(ph):
               [f"Hi {_name(ph.user)}, we reviewed your profile and need a few changes first.",
                f"What to fix: {ph.rejection_reason}", "Update your profile, then submit it again."],
               None, ("Open dashboard", _url("pro_dashboard")))
+
+
+# ---------------------------------------------------------------- payouts
+
+def payout_sent(b):
+    _send(_photographer_email(b), "Your payout was sent", "Your earnings are on their way",
+          [f"Hi {b.photographer.name.split()[0]}, we sent your earnings for the booking with {_name(b.user)} ({_when(b)}).",
+           "If you do not see it in your account within a day, reply to this email with the reference below."],
+          [("Booking", _when(b)), ("Paid by the customer", _money(b.amount)),
+           (f"PhotoPholio commission ({b.commission_percent or 0}%)", _money(b.platform_fee)),
+           ("You received", _money(b.payout_amount)), ("Transfer reference", b.payout_reference)],
+          ("See my earnings", _url("pro_earnings")))

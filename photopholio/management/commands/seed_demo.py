@@ -13,6 +13,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from PIL import Image, ImageDraw, ImageFilter
 
+from photopholio import money
 from photopholio.packages import create_sample_packages
 from photopholio.models import (Booking, City, Country, Feedback, Payment,
                                 Photo, Photographer, Portfolio, State)
@@ -24,6 +25,14 @@ PLACES = {
     "Delhi": ["New Delhi"],
     "Kerala": ["Kochi"],
     "Rajasthan": ["Jaipur"],
+}
+
+# Search keywords given to every demo photographer, by style (real photographers write their own).
+DEFAULT_TAGS = {
+    "wedding": "candid, traditional, pre-wedding, outdoor", "portrait": "studio, natural light, headshots",
+    "fashion": "studio, lookbook, outdoor", "street": "candid, documentary, outdoor",
+    "event": "candid, corporate, parties", "travel": "outdoor, destination, drone",
+    "product": "studio, ecommerce, catalogue", "wildlife": "outdoor, nature, birds",
 }
 
 # name, speciality, city, years, price, bio, portfolio title, photo captions
@@ -119,8 +128,15 @@ class Command(BaseCommand):
         for idx, (name, sp, city, years, price, bio, ptitle, captions) in enumerate(PHOTOGRAPHERS):
             rnd = random.Random(idx)
             ph = Photographer.objects.create(name=name, specialities=sp, city=cities[city],
-                                             experience_years=years, price_per_day=price, bio=bio)
+                                             experience_years=years, price_per_day=price, bio=bio,
+                                             tags=DEFAULT_TAGS.get(sp, ""))
             create_sample_packages(ph)
+            # Realistic travel policies so the demo shows free local events, outstation charges and "only in my city".
+            ph.travel_scope = "city" if idx % 5 == 0 else ("state" if idx % 3 == 0 else "india")
+            ph.travel_fee_state = 1500 + 500 * (idx % 3)
+            ph.travel_fee_india = 4000 + 1000 * (idx % 4)
+            ph.stay_fee_per_day = 1000 + 500 * (idx % 3)
+            ph.save(update_fields=["travel_scope", "travel_fee_state", "travel_fee_india", "stay_fee_per_day"])
             pf = Portfolio.objects.create(photographer=ph, title=ptitle,
                                           description=f"A selection from {name}'s recent {ph.get_specialities_display().lower()} work.")
             added = now - timedelta(days=rnd.randint(75, 140), hours=rnd.randint(0, 20))
@@ -142,6 +158,13 @@ class Command(BaseCommand):
                 backdate(Booking, b.pk, created_at=booked_on, booking_date=booked_on.date())
                 pay = Payment.objects.create(user=user, booking=b, amount=price, payment_method="upi", status="completed")
                 backdate(Payment, pay.pk, payment_date=booked_on + timedelta(minutes=6))
+                # The money side: paid, held, then ready once completed. Older shoots were already paid out to the photographer.
+                b.refresh_from_db()
+                money.on_paid(b)
+                money.on_completed(b)
+                if (today - event).days > 60:
+                    money.mark_paid(b, f"UTR{100000 + b.pk * 37}", now=timezone.make_aware(
+                        datetime.combine(event + timedelta(days=rnd.randint(3, 8)), time(11, 0))))
                 fb = Feedback.objects.create(user=user, booking=b, rating=rnd.choice([4, 4.5, 5, 5]),
                                              comment=COMMENTS[(idx + k) % len(COMMENTS)])
                 backdate(Feedback, fb.pk, review_date=timezone.make_aware(

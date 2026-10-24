@@ -1,17 +1,26 @@
   <div class="booking">
-    <div class="date-badge"><b>{{ b.event_date|date:"j" }}</b><span>{{ b.event_date|date:"M Y" }}</span></div>
+    <div class="date-badge"><b>{{ b.event_date|date:"j" }}</b><span>{% if b.is_multi_day %}{{ b.days }} days{% else %}{{ b.event_date|date:"M Y" }}{% endif %}</span></div>
     <div class="grow">
       <h3 class="mb-0"><a href="{% url 'photographer_detail' b.photographer.slug %}" class="text-reset text-decoration-none">{{ b.photographer.name }}</a></h3>
-      <span class="muted small">{{ b.photographer.get_specialities_display }} in {{ b.photographer.city.name }} &nbsp;|&nbsp; {% if b.package_name %}{{ b.package_name }}, {% endif %}&#8377;{{ b.amount }}{% if b.is_paid and b.status != 'cancelled' %} paid{% endif %}</span>
+      <span class="muted small">{{ b.photographer.get_specialities_display }} in {{ b.photographer.city.name }} &nbsp;|&nbsp; {% if b.package_name %}{{ b.package_name }}, {% endif %}&#8377;{{ b.amount }}{% if b.is_multi_day %} ({{ b.days }} days &times; &#8377;{{ b.day_rate }}){% endif %}{% if b.travel_fee %} incl. &#8377;{{ b.travel_fee }} travel{% endif %}{% if b.is_paid and b.status != 'cancelled' %} paid{% endif %}</span>
+      <div class="small"><strong>{{ b.date_label }}</strong>{% if b.start_time %} &middot; {{ b.start_time|time:"g:i a" }}{% endif %}</div>
+      {% include 'photopholio/_event_where.html' with b=b %}
+      {% include 'photopholio/_shoot_tracker.html' with b=b role='customer' %}
+      {% if b.awaiting_confirmation and not b.has_open_dispute %}
+        <div class="small mt-2"><strong>{{ b.photographer.name }} marked the shoot as completed.</strong> Please confirm that it took place. If you do nothing, it is confirmed automatically after {{ b.confirm_deadline|date:"j M, g:i a" }}.
+          <form method="post" action="{% url 'booking_confirm_done' b.pk %}" class="d-inline">{% csrf_token %}<button class="btn btn-primary btn-sm ms-1" type="submit">Confirm shoot completed</button></form></div>
+      {% endif %}
+      {% if b.dispute_status == 'open' %}<div class="small text-danger mt-1"><strong>You reported a problem.</strong> The admin is reviewing it. No decision has been made yet, and the photographer is not paid until then.</div>
+      {% elif b.dispute_status == 'resolved' and b.dispute_outcome != 'closed' %}<div class="small muted mt-1">Your report was reviewed: {{ b.get_dispute_outcome_display }}. {{ b.dispute_note }}</div>{% endif %}
       {% if b.tool %}<div class="small muted">Notes: {{ b.tool }}</div>{% endif %}
       {% if b.status == 'pending' %}<div class="small muted">Waiting for {{ b.photographer.name }} to accept. You will not be charged until they do.</div>{% endif %}
       {% if b.status == 'accepted' %}<div class="small"><strong>Accepted.</strong> Pay by {{ b.payment_deadline|date:"j M, g:i a" }} to confirm your date.</div>{% endif %}
       {% with rr=b.pending_reschedule %}{% if rr %}
-        <div class="small"><strong>Reschedule requested:</strong> {{ rr.new_date|date:"j M Y" }}. Waiting for {{ b.photographer.name }}; your booking stays on {{ b.event_date|date:"j M Y" }} until then.
+        <div class="small"><strong>Reschedule requested:</strong> {{ rr.new_label }}. Waiting for {{ b.photographer.name }}; your booking stays on {{ b.date_label }} until then.
           <form method="post" action="{% url 'reschedule_withdraw' rr.pk %}" class="d-inline">{% csrf_token %}<button class="btn btn-link btn-sm p-0 align-baseline" type="submit">Withdraw</button></form></div>
       {% endif %}{% endwith %}
       {% with last=b.reschedules.first %}{% if last and last.status == 'declined' %}
-        <div class="small muted">Your reschedule to {{ last.new_date|date:"j M Y" }} was declined{% if last.decline_reason %}: {{ last.decline_reason }}{% endif %}.</div>
+        <div class="small muted">Your reschedule to {{ last.new_label }} was declined{% if last.decline_reason %}: {{ last.decline_reason }}{% endif %}.</div>
       {% elif last and last.status == 'accepted' %}
         <div class="small muted">Moved from {{ last.old_date|date:"j M Y" }} (rescheduled once).</div>
       {% endif %}{% endwith %}
@@ -35,6 +44,7 @@
     <div class="d-flex gap-2 flex-wrap">
       {% if b.status == 'accepted' %}<a class="btn btn-primary btn-sm" href="{% url 'payment' b.pk %}">Pay now</a>{% endif %}
       {% if b.can_request_reschedule %}<a class="btn btn-outline-dark btn-sm" href="{% url 'booking_reschedule' b.pk %}">Change date</a>{% endif %}
+      {% if b.can_report %}<a class="btn btn-outline-danger btn-sm" href="{% url 'booking_report' b.pk %}">Report a problem</a>{% endif %}
       {% if b.can_review %}<a class="btn btn-amber btn-sm" href="{% url 'feedback_create' b.pk %}">Write a review</a>{% endif %}
       {% if b.status == 'pending' or b.status == 'accepted' or b.status == 'confirmed' %}<a class="btn btn-outline-dark btn-sm" href="{% url 'booking_cancel' b.pk %}">Cancel</a>{% endif %}
     </div>

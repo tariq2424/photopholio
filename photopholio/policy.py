@@ -8,6 +8,10 @@ from django.utils import timezone
 # After a photographer accepts, the customer has this long to pay before the request lapses.
 PAYMENT_WINDOW_HOURS = 24
 
+# After the photographer marks a shoot completed, the customer has this long to confirm it or report a problem.
+# Silence counts as confirmation, so a photographer's money is never stuck because a customer forgot.
+CONFIRM_WINDOW_HOURS = 48
+
 # (minimum whole days between cancelling and the event date, refund percent), highest first.
 # The booking only stores a date (no time), so rules are counted in days.
 REFUND_TIERS = [(2, 100), (1, 50), (0, 0)]

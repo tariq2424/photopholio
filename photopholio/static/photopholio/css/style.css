@@ -274,3 +274,17 @@ footer.site-footer .brand .logo-word{font-size:1.5rem}
   .mosaic a{border-width:4px;border-radius:5px}
   .mosaic .tag{font-size:.62rem;padding:.15rem .45rem;left:.25rem;bottom:.25rem}
 }
+
+.chip-sm{font-size:.85rem;padding:.3rem .8rem}
+.num{font-family:var(--sans);font-weight:700;font-size:.9em}
+
+/* live price box on the booking form */
+.price-box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:.8rem .9rem;margin-bottom:1rem}
+
+/* shoot tracker */
+.tracker{margin-top:.6rem;border-top:1px dashed var(--line);padding-top:.5rem}
+.tracker-row{display:flex;flex-wrap:wrap;align-items:center;gap:.2rem .6rem;padding:.15rem 0;font-size:.9rem}
+.tracker-date{font-weight:600;min-width:5.2rem}
+.tracker-state{font-size:.75rem;font-weight:700;padding:.1rem .55rem;border-radius:99px;background:#eef0f6;color:var(--ink)}
+.tracker-arrived,.tracker-in_progress{background:#fff3d6}
+.tracker-finished{background:#dff3e4}

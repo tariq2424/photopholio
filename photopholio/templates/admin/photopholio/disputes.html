@@ -1,0 +1,39 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<p class="text-muted">A customer's report never decides anything by itself. Read both sides and the tracking history, then choose. Your note is saved with your name and the time, and both people are emailed.</p>
+
+<div class="card mb-4 {% if open %}border-danger{% endif %}"><div class="card-header"><strong>Reported problems to review ({{ open|length }})</strong></div><div class="card-body p-0">
+{% for b in open %}
+  <div class="p-3 border-bottom">
+    <div class="d-flex flex-wrap justify-content-between">
+      <div><strong>#{{ b.pk }}: {{ b.user.get_full_name|default:b.user.username }} booked {{ b.photographer.name }}</strong>
+        <div class="small text-muted">{{ b.date_label }} &middot; {{ b.place|default:"venue not given" }} &middot; customer paid &#8377;{{ b.amount }} &middot; photographer's share &#8377;{{ b.payout_amount }} (on hold)</div></div>
+      <a href="{% url 'admin:photopholio_booking_change' b.pk %}">Open booking</a>
+    </div>
+    <div class="mt-2"><span class="badge badge-danger">{{ b.get_dispute_kind_display }}</span> <span class="small text-muted">reported {{ b.dispute_opened_at|date:"j M Y, g:i a" }}</span>
+      <blockquote class="mb-2 mt-1">{{ b.dispute_text }}</blockquote></div>
+    <div class="small"><strong>What the photographer tapped:</strong>
+      {% for d in b.days_view %}<div>{{ d.date|date:"D j M" }}: {% if d.state == 'upcoming' %}nothing tapped{% else %}{% if d.arrived_at %}arrived {{ d.arrived_at|date:"g:i a" }}{% endif %}{% if d.started_at %}, started {{ d.started_at|date:"g:i a" }}{% endif %}{% if d.finished_at %}, finished {{ d.finished_at|date:"g:i a" }}{% endif %}{% if d.seen %} (customer confirmed arrival){% endif %}{% endif %}</div>{% endfor %}
+      <div class="text-muted">Taps are the photographer's own report. Silence is not proof of a no-show: they may have forgotten to tap.</div></div>
+    <details class="small mt-2"><summary>History ({{ b.timeline|length }} entries)</summary>
+      <ul class="mb-0">{% for e in b.timeline %}<li>{{ e.created_at|date:"j M, g:i a" }}: {{ e.actor_role }}{% if e.actor %} ({{ e.actor.username }}){% endif %} {{ e.action }}{% if e.note %}: {{ e.note }}{% endif %}</li>{% endfor %}</ul></details>
+    <form method="post" action="{% url 'admin:photopholio_dispute_resolve' b.pk %}" class="mt-3">{% csrf_token %}
+      <input class="form-control form-control-sm mb-2" name="note" placeholder="Your decision and why (both people will read this)" maxlength="500" required aria-label="Decision note">
+      <button class="btn btn-sm btn-success" name="outcome" value="pay" type="submit">Pay the photographer</button>
+      <button class="btn btn-sm btn-danger" name="outcome" value="refund" type="submit" onclick="return confirm('Refund the customer in full and cancel this booking?')">Refund the customer in full</button>
+      <button class="btn btn-sm btn-outline-secondary" name="outcome" value="dismiss" type="submit">Dismiss the report</button>
+    </form>
+  </div>
+{% empty %}<p class="p-3 mb-0 text-muted">No problems reported. Nothing to decide.</p>{% endfor %}
+</div></div>
+
+<div class="card mb-4"><div class="card-header"><strong>Waiting for the customer to confirm ({{ waiting|length }})</strong></div><div class="card-body p-0">
+{% if waiting %}<table class="table table-sm mb-0"><thead><tr><th>Booking</th><th>Completed</th><th>Auto-confirmed after</th></tr></thead><tbody>
+  {% for b in waiting %}<tr><td><a href="{% url 'admin:photopholio_booking_change' b.pk %}">#{{ b.pk }}</a> {{ b.photographer.name }} &middot; {{ b.date_label }}</td><td>{{ b.completed_at|date:"j M, g:i a" }}</td><td>{{ b.confirm_deadline|date:"j M, g:i a" }}</td></tr>{% endfor %}
+</tbody></table>{% else %}<p class="p-3 mb-0 text-muted">Nothing is waiting.</p>{% endif %}</div></div>
+
+<div class="card mb-3"><div class="card-header"><strong>Recent decisions</strong></div><div class="card-body p-0">
+{% if recent %}<table class="table table-sm mb-0"><thead><tr><th>Booking</th><th>Decision</th><th>Note</th><th>By</th></tr></thead><tbody>
+  {% for b in recent %}<tr><td><a href="{% url 'admin:photopholio_booking_change' b.pk %}">#{{ b.pk }}</a> {{ b.photographer.name }}</td><td>{{ b.get_dispute_outcome_display }}</td><td>{{ b.dispute_note }}</td><td>{{ b.dispute_resolved_by.username }}, {{ b.dispute_resolved_at|date:"j M" }}</td></tr>{% endfor %}
+</tbody></table>{% else %}<p class="p-3 mb-0 text-muted">No decisions yet.</p>{% endif %}</div></div>
+{% endblock %}

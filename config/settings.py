@@ -5,9 +5,6 @@ from pathlib import Path
 import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-from dotenv import load_dotenv
-
-load_dotenv(BASE_DIR / ".env")
 
 # --- Security / environment -------------------------------------------------
 SECRET_KEY = os.environ.get("SECRET_KEY", "dev-only-insecure-key-change-in-production")
@@ -110,6 +107,9 @@ if EMAIL_HOST_USER and EMAIL_HOST_PASSWORD:
     EMAIL_TIMEOUT = 10  # never let a slow mail server hang a page
 else:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+# How PhotoPholio earns: this percent of the photographer's SERVICE price (never of travel) is kept as commission.
+# The customer pays no extra fee. A single photographer can have their own percent in the admin.
+PLATFORM_COMMISSION_PERCENT = int(os.environ.get("PLATFORM_COMMISSION_PERCENT", "10"))
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", f"PhotoPholio <{EMAIL_HOST_USER or 'no-reply@photopholio.local'}>")
 
 # --- Auth --------------------------------------------------------------------
@@ -148,10 +148,16 @@ JAZZMIN_SETTINGS = {
     "topmenu_links": [
         {"name": "Home", "url": "admin:index", "permissions": ["auth.view_user"]},
         {"name": "Analytics", "url": "admin:photopholio_analytics", "permissions": ["auth.view_user"]},
+        {"name": "Payouts", "url": "admin:photopholio_payouts", "permissions": ["auth.view_user"]},
+        {"name": "Disputes", "url": "admin:photopholio_disputes", "permissions": ["auth.view_user"]},
     ],
     "custom_links": {
         "photopholio": [
             {"name": "Analytics", "url": "admin:photopholio_analytics", "icon": "fas fa-chart-line",
+             "permissions": ["auth.view_user"]},
+            {"name": "Payouts", "url": "admin:photopholio_payouts", "icon": "fas fa-money-bill-wave",
+             "permissions": ["auth.view_user"]},
+            {"name": "Disputes", "url": "admin:photopholio_disputes", "icon": "fas fa-gavel",
              "permissions": ["auth.view_user"]},
         ]
     },

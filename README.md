@@ -21,16 +21,20 @@ book an event date, pay (demo checkout) and leave reviews. Built from my GTU sum
 - Two account types chosen at signup: customers (book) and photographers (list their work). Each has its own login page
 - Photographer area: create a profile, manage portfolios and photos, see bookings, submit for review
 - Admin approval: a photographer's profile stays hidden from customers until an admin approves it (with a reject reason the photographer can read)
-- **Email notifications (Gmail SMTP):** Sends emails for booking updates, photographer approval, refunds and other booking-related events when SMTP is configured
-- **Password reset:** Sends password-reset links to users' registered email addresses through the configured email backend
-- **Environment-based email configuration:** Uses a `.env` file for local development; production deployments must configure their own environment variables
-- **Secure credentials:** Gmail App Passwords are stored outside source control and must never be committed to GitHub
+- Emails for every booking step, approval and refund (printed in the terminal until real email settings are added)
+- Forgot password with an emailed reset link
 - Admin analytics page at `/admin/analytics/`: revenue, bookings per month, approvals and refunds waiting, top photographers
 - Availability calendar on every photographer page (green = free, click a day to fill in the booking). Photographers block days they cannot work
 - Search by date: only photographers who are free on that day are shown (home page and the filters)
 - Packages: photographers can offer Basic, Standard and Premium. The customer picks one when booking and the booking keeps that price, even if the photographer changes the package later
 - `python manage.py add_sample_packages` gives photographers without packages a starting set (easy to edit)
 - Rescheduling: once a request is accepted, the customer can ask to move it to another free day (event at least 2 days away, once per booking). The photographer accepts or declines; the price and payment stay the same, and until accepted the old date is kept
+- **Travel charges (India)**: the customer pays travel, the photographer sets the price. Each photographer chooses where they take events (their city, their state or all of India), a travel charge for another city or state, and a stay-and-food charge per day away. Events in the photographer's own city have no travel charge. The customer sees the full price (service + travel) before sending the request, and the booking keeps that price even if the policy changes later. Photographers set this under Travel charges.
+- **Commission and payouts**: PhotoPholio keeps 10% of the photographer's SERVICE price (travel is passed on in full; change the default with the `PLATFORM_COMMISSION_PERCENT` environment variable, or set a percent per photographer in the admin). Example: a 4-day booking of Rs.22,000 gives the photographer Rs.19,800 and PhotoPholio Rs.2,200. After the customer pays, the money is *held*; when the shoot is completed it becomes *ready to pay*; the admin pays the photographer by UPI or bank transfer and records the reference on Admin > Payouts (CSV export included). Cancellations and refunds adjust the split automatically. This is a ledger only: checkout is a demo and no real money moves.
+- Photographers see what they earn (Earnings page, and the split before they accept) and save their payout details (UPI or bank) in their profile.
+- Admin analytics shows money cards (booking value, commission earned and pending, payouts due, travel collected), multi-day and outstation share, and top event cities.
+- After creating an account you are sent to the login page with your username filled in (never the password); after logging in, customers land on My bookings and photographers on their dashboard.
+- Photographers can add keywords (outdoor, candid, pre-wedding...) in their profile; they show as small tags on the public profile
 - Saved photographers (wishlist): customers tap the heart on a card or profile and find them under Saved photographers
 - Verified badge: the admin can give or remove it (Photographers > Actions); customers can filter by Verified only
 - Review replies: a photographer answers each review once (editable) and it shows on the public page; the admin can hide a review, which also removes it from the rating
@@ -40,6 +44,10 @@ book an event date, pay (demo checkout) and leave reviews. Built from my GTU sum
 - Customised admin (Jazzmin): filters, search, inline editing, image previews, "mark completed" action
 - Responsive UI (Bootstrap 5), keyboard-focus styles, reduced-motion support
 - 70 automated tests
+
+- **Event venue and multi-day bookings**: a booking request carries the venue address, city, state, pincode and start time. An event can last several days (up to 15): the price is one day's price x the number of days, every day in the range is checked against the photographer's calendar, and a rescheduled booking keeps its length. India only for now.
+
+- **Shoot tracking and disputes**: on the event day the photographer taps "I've arrived", "Start shoot" and "Finish today's shoot" (in order, once each, only on that date; multi-day events get one row per day). The customer is emailed on arrival and can tap "Yes, they are here". When the last day is finished the booking becomes completed and the customer is asked to confirm; the photographer's payout stays on hold until they confirm, 48 hours pass in silence (auto-confirm), or the admin decides. The customer can also report a problem (no-show, quality, other) from the first day until the payout is sent: the money is frozen and the admin sees it on the Disputes page, where they pay, refund in full, or dismiss, with a note both people receive. Every tap and decision is stored in an audit trail (`ShootEvent`) shown inside the booking in the admin. The taps are self-reported evidence, not GPS; checkout and payouts are a demo ledger.
 
 ## Tech stack
 Python 3.10+, Django 5.2, SQLite (PostgreSQL via `DATABASE_URL`), Pillow, Bootstrap 5, WhiteNoise, Gunicorn.
@@ -60,9 +68,9 @@ Demo customer login created by the seed command: `demo` / `demo12345` (for local
 
 Run tests: `python manage.py test`
 
-## Data model (12 tables)
+## Data model (14 tables)
 `User` (Django built-in) - `UserProfile` - `Country` > `State` > `City` - `Photographer` > `Portfolio` > `Photo`
-- `Booking` > `Payment`, `Feedback` - `ContactUs`
+- `Booking` > `Payment`, `Feedback`, `ShootDay`, `ShootEvent` - `ContactUs`
 
 Differences from the original data dictionary (deliberate):
 - `User` uses Django's auth model, so passwords are hashed instead of stored as plain text.
@@ -87,6 +95,7 @@ photopholio/
   models.py             database tables
   views.py              request handling logic
   forms.py              forms and validation
+  travel.py             travel charges: who pays, how much
   urls.py               URL routes
   admin.py              admin customisation
   templates/photopholio HTML templates

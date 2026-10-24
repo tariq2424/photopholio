@@ -13,10 +13,16 @@ from PIL import Image
 from django.urls import reverse
 from django.utils import timezone
 
-from . import analytics, availability, booking_flow, emails, favourites, policy, reviews, throttle
+from . import analytics, availability, booking_flow, emails, favourites, money, policy, reviews, throttle, tracking, travel
 from .forms import RegisterForm
 from .models import (Booking, City, Country, Feedback, BlockedDate, LoginAttempt, Package, Payment, Photo, Photographer, Portfolio,
-                     Favourite, RescheduleRequest, State, UserProfile)
+                     Favourite, RescheduleRequest, ShootDay, ShootEvent, State, UserProfile)
+
+
+def EVENT(**kw):
+    """The venue fields every booking request must now carry."""
+    return {"event_address": "Hall 1, Main Road, Alkapuri", "event_city": "Vadodara",
+            "event_state": State.objects.order_by("id").first().pk, "event_pincode": "390001", **kw}
 
 
 class PhotoPholioTests(TestCase):
@@ -41,7 +47,7 @@ class PhotoPholioTests(TestCase):
 
     def test_booking_requires_login(self):
         url = reverse("photographer_detail", args=[self.ph.slug])
-        resp = self.client.post(url, {"event_date": (timezone.localdate() + timedelta(days=5)).isoformat()})
+        resp = self.client.post(url, {**EVENT(), "event_date": (timezone.localdate() + timedelta(days=5)).isoformat()})
         self.assertEqual(resp.status_code, 302)
         self.assertTrue(resp.url.startswith("/accounts/login/"))
         self.assertEqual(Booking.objects.count(), 0)
@@ -50,7 +56,7 @@ class PhotoPholioTests(TestCase):
         self.client.login(username="tester", password="pass12345")
         date = (timezone.localdate() + timedelta(days=5)).isoformat()
         url = reverse("photographer_detail", args=[self.ph.slug])
-        self.client.post(url, {"event_date": date, "tool": ""})
+        self.client.post(url, {**EVENT(), "event_date": date, "tool": ""})
         booking = Booking.objects.get()
         self.assertEqual(booking.status, "pending")
         # paying before the photographer accepts does nothing
@@ -68,13 +74,13 @@ class PhotoPholioTests(TestCase):
         other = User.objects.create_user("second", password="pass12345")
         self.client.logout()
         self.client.login(username="second", password="pass12345")
-        self.client.post(url, {"event_date": date, "tool": ""})
+        self.client.post(url, {**EVENT(), "event_date": date, "tool": ""})
         self.assertEqual(Booking.objects.count(), 1)
 
     def test_past_date_rejected(self):
         self.client.login(username="tester", password="pass12345")
         url = reverse("photographer_detail", args=[self.ph.slug])
-        self.client.post(url, {"event_date": "2020-01-01", "tool": ""})
+        self.client.post(url, {**EVENT(), "event_date": "2020-01-01", "tool": ""})
         self.assertEqual(Booking.objects.count(), 0)
 
     def test_feedback_updates_rating(self):
@@ -134,14 +140,14 @@ class PhotographerAccountTests(TestCase):
         resp = self.client.post(reverse("register"), {
             "role": "photographer", "first_name": "Newbie", "username": "newbie",
             "email": "n@example.com", "password1": "Str0ng-pass-99", "password2": "Str0ng-pass-99"})
-        self.assertRedirects(resp, reverse("pro_profile"))
+        self.assertRedirects(resp, reverse("pro_login"))
         self.assertEqual(User.objects.get(username="newbie").profile.role, "photographer")
 
     def test_register_defaults_to_customer_page(self):
         resp = self.client.post(reverse("register"), {
             "role": "customer", "first_name": "Buyer", "username": "buyer",
             "email": "b@example.com", "password1": "Str0ng-pass-99", "password2": "Str0ng-pass-99"})
-        self.assertRedirects(resp, reverse("profile"))
+        self.assertRedirects(resp, reverse("login"))
         self.assertEqual(User.objects.get(username="buyer").profile.role, "customer")
 
     def test_one_login_for_everyone_routes_by_role(self):
@@ -150,7 +156,7 @@ class PhotographerAccountTests(TestCase):
             self.assertRedirects(r, reverse("pro_dashboard"), fetch_redirect_response=False)
             self.client.logout()
             r = self.client.post(reverse(page), {"username": "cust", "password": "pass12345"})
-            self.assertRedirects(r, reverse("home"), fetch_redirect_response=False)
+            self.assertRedirects(r, reverse("my_bookings"), fetch_redirect_response=False)
             self.client.logout()
 
     def test_login_with_email_any_capitals_and_spaces(self):
@@ -174,7 +180,7 @@ class PhotographerAccountTests(TestCase):
     def test_next_page_is_honoured_and_logged_in_users_skip_the_form(self):
         r = self.client.post(reverse("login") + "?next=/contact/", {"username": "cust", "password": "pass12345"})
         self.assertRedirects(r, "/contact/", fetch_redirect_response=False)
-        self.assertRedirects(self.client.get(reverse("login")), reverse("home"), fetch_redirect_response=False)
+        self.assertRedirects(self.client.get(reverse("login")), reverse("my_bookings"), fetch_redirect_response=False)
         self.client.logout()
         self.client.login(username="pro", password="pass12345")
         self.assertRedirects(self.client.get(reverse("login")), reverse("pro_dashboard"), fetch_redirect_response=False)
@@ -307,7 +313,7 @@ class PhotographerAccountTests(TestCase):
         target = Photographer.objects.create(name="Bookable", bio="bio", specialities="event", city=self.city)
         self.client.login(username="pro", password="pass12345")
         date = (timezone.localdate() + timedelta(days=9)).isoformat()
-        self.client.post(reverse("photographer_detail", args=[target.slug]), {"event_date": date, "tool": ""})
+        self.client.post(reverse("photographer_detail", args=[target.slug]), {**EVENT(), "event_date": date, "tool": ""})
         self.assertEqual(Booking.objects.count(), 0)
 
 
@@ -492,7 +498,7 @@ class BookingFlowTests(TestCase):
         self.booking(10)
         self.client.login(username="cust", password="pass12345")
         date = (self.today + timedelta(days=10)).isoformat()
-        self.client.post(reverse("photographer_detail", args=[self.ph.slug]), {"event_date": date, "tool": ""})
+        self.client.post(reverse("photographer_detail", args=[self.ph.slug]), {**EVENT(), "event_date": date, "tool": ""})
         self.assertEqual(Booking.objects.filter(user=self.cust).count(), 1)
 
 
@@ -526,7 +532,7 @@ class EmailNotificationTests(TestCase):
     def test_request_emails_customer_and_photographer(self):
         self.client.login(username="cust", password="pass12345")
         date = (self.today + timedelta(days=12)).isoformat()
-        self.client.post(reverse("photographer_detail", args=[self.ph.slug]), {"event_date": date, "tool": "Drone"})
+        self.client.post(reverse("photographer_detail", args=[self.ph.slug]), {**EVENT(), "event_date": date, "tool": "Drone"})
         self.assertEqual(self.to(), ["cust@example.com", "pro@example.com"])
         pro_mail = next(m for m in mail.outbox if m.to == ["pro@example.com"])
         self.assertIn("Drone", pro_mail.body)
@@ -634,7 +640,7 @@ class EmailNotificationTests(TestCase):
         date = (self.today + timedelta(days=14)).isoformat()
         with patch("photopholio.emails.send_mail", side_effect=OSError("mail server down")):
             with self.assertLogs("photopholio.emails", level="ERROR"):
-                resp = self.client.post(reverse("photographer_detail", args=[self.ph.slug]), {"event_date": date, "tool": ""})
+                resp = self.client.post(reverse("photographer_detail", args=[self.ph.slug]), {**EVENT(), "event_date": date, "tool": ""})
         self.assertEqual(resp.status_code, 302)
         self.assertEqual(Booking.objects.filter(user=self.cust).count(), 1)
 
@@ -1124,7 +1130,7 @@ class AvailabilityTests(TestCase):
     def test_a_blocked_day_cannot_be_requested(self):
         self.block(10, "Holiday")
         self.client.login(username="cust", password="pass12345")
-        r = self.client.post(reverse("photographer_detail", args=[self.ph.slug]), {"event_date": self.day(10).isoformat(), "tool": ""})
+        r = self.client.post(reverse("photographer_detail", args=[self.ph.slug]), {**EVENT(), "event_date": self.day(10).isoformat(), "tool": ""})
         self.assertContains(r, "not available on that date")
         self.assertNotContains(r, "Holiday")
         self.assertEqual(Booking.objects.count(), 0)
@@ -1261,7 +1267,7 @@ class PackageTests(TestCase):
 
     def request(self, package=None, days=10, who=None, extra=None):
         self.client.login(username="cust", password="pass12345")
-        data = {"event_date": (self.today + timedelta(days=days)).isoformat(), "tool": ""}
+        data = {**EVENT(), "event_date": (self.today + timedelta(days=days)).isoformat(), "tool": ""}
         if package is not None:
             data["package"] = package.pk if hasattr(package, "pk") else package
         data.update(extra or {})
@@ -1970,3 +1976,1041 @@ class FinalPhaseTests(TestCase):
     def test_migration_state_is_clean(self):
         from django.core.management import call_command
         call_command("makemigrations", "--check", "--dry-run")
+
+
+class MultiDayAndVenueTests(TestCase):
+    """Phase 5A: where the event is, and bookings that last several days."""
+
+    def setUp(self):
+        country = Country.objects.create(name="India")
+        self.gj = State.objects.create(country=country, name="Gujarat")
+        city = City.objects.create(state=self.gj, name="Vadodara")
+        self.pro_user = User.objects.create_user("pro", password="pass12345", first_name="Pro", email="pro@example.com")
+        UserProfile.objects.create(user=self.pro_user, role="photographer")
+        self.ph = Photographer.objects.create(name="Multi Snap", bio="bio", specialities="wedding", city=city,
+                                              price_per_day=5500, user=self.pro_user, status="approved")
+        self.cust = User.objects.create_user("cust", password="pass12345", first_name="Cust", email="cust@example.com")
+        self.cust2 = User.objects.create_user("cust2", password="pass12345")
+        self.today = timezone.localdate()
+        self.url = reverse("photographer_detail", args=[self.ph.slug])
+
+    def d(self, n):
+        return self.today + timedelta(days=n)
+
+    def make(self, start, end=None, status="pending", user=None):
+        return Booking.objects.create(user=user or self.cust, photographer=self.ph, event_date=self.d(start),
+                                      end_date=self.d(end) if end is not None else None, status=status, price=5500, day_rate=5500)
+
+    def post(self, **kw):
+        self.client.login(username="cust", password="pass12345")
+        return self.client.post(self.url, {**EVENT(), "event_date": self.d(20).isoformat(), **kw})
+
+    # ---- the venue ----
+    def test_venue_is_required(self):
+        self.client.login(username="cust", password="pass12345")
+        r = self.client.post(self.url, {"event_date": self.d(20).isoformat()})
+        self.assertEqual(Booking.objects.count(), 0)
+        for field in ("event_address", "event_city", "event_pincode", "event_state"):
+            self.assertIn(field, r.context["form"].errors)
+
+    def test_pincode_and_address_are_checked(self):
+        for bad in ("12345", "abcdef", "012345", "1234567"):
+            self.post(event_pincode=bad)
+        self.post(event_address="Hall")
+        self.assertEqual(Booking.objects.count(), 0)
+
+    def test_venue_is_saved_and_cleaned(self):
+        self.post(venue_name="Grand Palace", event_city="  ahmedabad ", start_time="18:30")
+        b = Booking.objects.get()
+        self.assertEqual((b.event_city, b.venue_name, b.event_pincode), ("Ahmedabad", "Grand Palace", "390001"))
+        self.assertEqual(b.event_state, self.gj)
+        self.assertEqual(b.place, "Grand Palace, Ahmedabad, Gujarat")
+        self.assertEqual(b.start_time.strftime("%H:%M"), "18:30")
+
+    def test_photographer_sees_the_address_customer_too(self):
+        self.post(venue_name="Grand Palace")
+        self.client.login(username="pro", password="pass12345")
+        self.assertContains(self.client.get(reverse("pro_dashboard")), "Hall 1, Main Road, Alkapuri")
+        self.client.login(username="cust", password="pass12345")
+        self.assertContains(self.client.get(reverse("my_bookings")), "Grand Palace")
+
+    def test_request_email_to_photographer_has_the_venue(self):
+        mail.outbox.clear()
+        self.post(venue_name="Grand Palace")
+        to_pro = [m for m in mail.outbox if "pro@example.com" in m.to][0]
+        self.assertIn("Grand Palace", to_pro.body)
+        self.assertIn("390001", to_pro.body)
+
+    def test_old_booking_without_venue_still_displays(self):
+        b = Booking.objects.create(user=self.cust, photographer=self.ph, event_date=self.d(10))
+        self.assertEqual(b.place, "")
+        self.client.login(username="cust", password="pass12345")
+        self.assertEqual(self.client.get(reverse("my_bookings")).status_code, 200)
+
+    # ---- one day and many days ----
+    def test_one_day_booking_keeps_working(self):
+        self.post()
+        b = Booking.objects.get()
+        self.assertEqual((b.end_date, b.days, b.price, b.day_rate), (b.event_date, 1, 5500, 5500))
+        self.assertFalse(b.is_multi_day)
+
+    def test_four_day_price_is_rate_times_days(self):
+        self.post(end_date=self.d(23).isoformat())
+        b = Booking.objects.get()
+        self.assertEqual((b.days, b.day_rate, b.price, b.amount), (4, 5500, 22000, 22000))
+        self.assertEqual(len(b.day_list()), 4)
+
+    def test_package_rate_is_multiplied_too(self):
+        Package.objects.create(photographer=self.ph, tier="standard", price=9000)
+        pkg = Package.objects.get()
+        self.post(end_date=self.d(21).isoformat(), package=pkg.pk)
+        b = Booking.objects.get()
+        self.assertEqual((b.days, b.day_rate, b.price), (2, 9000, 18000))
+
+    def test_last_day_before_first_and_too_long_are_refused(self):
+        self.post(end_date=self.d(19).isoformat())
+        self.post(end_date=self.d(20 + availability.MAX_BOOKING_DAYS).isoformat())
+        self.assertEqual(Booking.objects.count(), 0)
+        self.post(end_date=self.d(19 + availability.MAX_BOOKING_DAYS).isoformat())  # exactly the maximum
+        self.assertEqual(Booking.objects.get().days, availability.MAX_BOOKING_DAYS)
+
+    def test_ten_day_booking(self):
+        self.post(end_date=self.d(29).isoformat())
+        self.assertEqual(Booking.objects.get().days, 10)
+
+    def test_date_labels(self):
+        b = Booking(event_date=date(2026, 12, 12), end_date=date(2026, 12, 15))
+        self.assertEqual(b.date_label, "12 - 15 Dec 2026")
+        b.end_date = date(2027, 1, 2)
+        self.assertEqual(b.date_label, "12 Dec 2026 - 2 Jan 2027")
+        b.end_date = date(2026, 12, 12)
+        self.assertEqual(b.date_label, "12 Dec 2026")
+        b.end_date = date(2026, 12, 30)
+        b.event_date = date(2026, 11, 28)
+        self.assertEqual(b.date_label, "28 Nov - 30 Dec 2026")
+
+    # ---- availability across the range ----
+    def test_accepted_range_blocks_every_day_in_it(self):
+        self.make(10, 13, status="accepted")
+        for n, free in ((9, True), (10, False), (11, False), (13, False), (14, True)):
+            self.assertEqual(availability.is_free(self.ph, self.d(n)), free, n)
+        self.assertNotIn(self.ph, availability.free_on(self.d(12)))
+        self.assertIn(self.ph, availability.free_on(self.d(14)))
+
+    def test_pending_range_does_not_block(self):
+        self.make(10, 13, status="pending")
+        self.assertTrue(availability.is_free(self.ph, self.d(11)))
+
+    def test_form_refuses_a_range_that_overlaps_a_booking(self):
+        self.make(22, 25, status="confirmed", user=self.cust2)
+        self.post(end_date=self.d(23).isoformat())     # 20-23 touches 22-23
+        self.post(event_date=self.d(24).isoformat())   # starts inside
+        self.post(event_date=self.d(18).isoformat(), end_date=self.d(26).isoformat())  # swallows it
+        self.assertEqual(Booking.objects.filter(user=self.cust).count(), 0)
+        self.post(event_date=self.d(26).isoformat(), end_date=self.d(27).isoformat())  # right after
+        self.post(event_date=self.d(19).isoformat(), end_date=self.d(21).isoformat())  # right before
+        self.assertEqual(Booking.objects.filter(user=self.cust).count(), 2)
+
+    def test_blocked_day_inside_the_range_refuses(self):
+        BlockedDate.objects.create(photographer=self.ph, date=self.d(21))
+        self.post(end_date=self.d(22).isoformat())
+        self.assertEqual(Booking.objects.count(), 0)
+
+    def test_same_customer_cannot_request_overlapping_twice(self):
+        self.post(end_date=self.d(22).isoformat())
+        self.post(event_date=self.d(22).isoformat(), end_date=self.d(24).isoformat())
+        self.assertEqual(Booking.objects.count(), 1)
+
+    def test_row_without_end_date_counts_as_one_day(self):
+        b = self.make(10, status="accepted")
+        Booking.objects.filter(pk=b.pk).update(end_date=None)  # like a row from before this feature
+        self.assertFalse(availability.is_free(self.ph, self.d(10)))
+        self.assertTrue(availability.is_free(self.ph, self.d(11)))
+        self.assertEqual(Booking.objects.get(pk=b.pk).days, 1)
+
+    def test_calendar_marks_all_days(self):
+        self.make(3, 5, status="confirmed")
+        cells = [c for m in availability.months(self.ph, 2) for w in m["weeks"] for c in w if c.get("in_month")]
+        booked = {c["date"] for c in cells if c["state"] == "booked"}
+        self.assertEqual(booked, {self.d(3), self.d(4), self.d(5)})
+
+    # ---- accept ----
+    def test_accepting_a_range_declines_overlapping_rivals_only(self):
+        mine = self.make(10, 13)
+        overlap = self.make(12, 14, user=self.cust2)
+        after = self.make(14, 15, user=self.cust2)
+        self.client.login(username="pro", password="pass12345")
+        self.client.post(reverse("pro_booking_action", args=[mine.pk, "accept"]))
+        for b in (mine, overlap, after):
+            b.refresh_from_db()
+        self.assertEqual((mine.status, overlap.status, after.status), ("accepted", "declined", "pending"))
+
+    def test_cannot_accept_into_an_accepted_range(self):
+        self.make(10, 13, status="accepted", user=self.cust2)
+        other = self.make(12, 12)
+        with self.assertRaises(booking_flow.FlowError):
+            booking_flow.accept(other)
+
+    def test_cannot_accept_over_a_blocked_day_in_the_middle(self):
+        BlockedDate.objects.create(photographer=self.ph, date=self.d(11))
+        with self.assertRaises(booking_flow.FlowError):
+            booking_flow.accept(self.make(10, 12))
+
+    # ---- completing ----
+    def test_complete_only_after_the_last_day(self):
+        b = self.make(-1, 2, status="confirmed")
+        self.assertFalse(b.can_complete)
+        b.end_date = self.d(0)
+        self.assertTrue(b.can_complete)
+
+    def test_dashboard_lists_a_running_multi_day_booking_as_upcoming(self):
+        self.make(-1, 2, status="confirmed")
+        self.client.login(username="pro", password="pass12345")
+        r = self.client.get(reverse("pro_dashboard"))
+        self.assertEqual(len(r.context["upcoming"]), 1)
+        self.assertEqual(len(r.context["to_complete"]), 0)
+
+    # ---- blocking days ----
+    def test_block_days_refused_over_a_multi_day_booking(self):
+        self.make(10, 13, status="confirmed")
+        from .forms import BlockDatesForm
+        form = BlockDatesForm({"start": self.d(12).isoformat(), "end": self.d(15).isoformat()}, photographer=self.ph)
+        self.assertFalse(form.is_valid())
+        self.assertIn("already have a booking", str(form.errors))
+
+    # ---- rescheduling a multi-day booking ----
+    def test_reschedule_keeps_the_length_and_may_overlap_its_own_days(self):
+        b = self.make(30, 33, status="confirmed")
+        req = booking_flow.request_reschedule(b, self.d(32), today=self.today)   # 32-35 overlaps its own 32-33
+        self.assertEqual(req.new_end, self.d(35))
+        self.assertIn("-", req.new_label)
+        req = booking_flow.accept_reschedule(req, today=self.today)
+        b.refresh_from_db()
+        self.assertEqual((b.event_date, b.end_date, b.days), (self.d(32), self.d(35), 4))
+        self.assertEqual(b.price, 5500)  # the price does not change
+
+    def test_reschedule_refused_if_any_new_day_is_taken(self):
+        b = self.make(30, 33, status="confirmed")
+        self.make(36, 36, status="confirmed", user=self.cust2)
+        with self.assertRaises(booking_flow.FlowError):
+            booking_flow.request_reschedule(b, self.d(34), today=self.today)  # 34-37 hits the 36th
+        self.assertTrue(booking_flow.request_reschedule(b, self.d(37), today=self.today))
+
+    def test_reschedule_accept_declines_overlapping_rivals_and_requests(self):
+        b = self.make(30, 31, status="confirmed")
+        rival = self.make(41, 41, user=self.cust2)
+        req = booking_flow.request_reschedule(b, self.d(40), today=self.today)   # 40-41
+        other_b = self.make(50, 51, status="confirmed", user=self.cust2)
+        other_req = booking_flow.request_reschedule(other_b, self.d(41), today=self.today)  # 41-42 overlaps 40-41
+        booking_flow.accept_reschedule(req, today=self.today)
+        rival.refresh_from_db()
+        other_req.refresh_from_db()
+        self.assertEqual(rival.status, "declined")
+        self.assertEqual(other_req.status, "declined")
+
+    def test_cancel_multi_day_refund_uses_first_day(self):
+        b = self.make(10, 13, status="confirmed")
+        Payment.objects.create(user=b.user, booking=b, amount=22000, payment_method="upi", status="completed")
+        refund = booking_flow.cancel_by_customer(b, today=self.today)
+        self.assertEqual(refund, 22000)  # 10 days before the first day: full refund
+
+    def test_migration_style_defaults(self):
+        b = Booking.objects.create(user=self.cust, photographer=self.ph, event_date=self.d(5))
+        self.assertEqual(b.end_date, b.event_date)
+
+
+class TravelTests(TestCase):
+    """Phase 5B: the customer pays travel, the photographer sets the price. India only."""
+
+    def setUp(self):
+        country = Country.objects.create(name="India")
+        self.gj = State.objects.create(country=country, name="Gujarat")
+        self.mh = State.objects.create(country=country, name="Maharashtra")
+        self.vad = City.objects.create(state=self.gj, name="Vadodara")
+        self.pro_user = User.objects.create_user("pro", password="pass12345", first_name="Pro", email="pro@example.com")
+        UserProfile.objects.create(user=self.pro_user, role="photographer")
+        self.ph = Photographer.objects.create(
+            name="Travel Snap", bio="bio", specialities="wedding", city=self.vad, price_per_day=5500, user=self.pro_user,
+            status="approved", travel_scope="india", travel_fee_state=2000, travel_fee_india=6000, stay_fee_per_day=1500)
+        self.cust = User.objects.create_user("cust", password="pass12345", first_name="Cust", email="cust@example.com")
+        self.today = timezone.localdate()
+        self.url = reverse("photographer_detail", args=[self.ph.slug])
+
+    def d(self, n):
+        return (self.today + timedelta(days=n)).isoformat()
+
+    def book(self, state=None, city="Vadodara", **kw):
+        self.client.login(username="cust", password="pass12345")
+        data = EVENT(event_state=(state or self.gj).pk, event_city=city, event_date=self.d(20), **kw)
+        return self.client.post(self.url, data)
+
+    # ---- the rule itself
+    def test_zones(self):
+        z = lambda st, c: travel.zone_for(self.ph, st, c)
+        self.assertEqual(z(self.gj, "Vadodara"), "local")
+        self.assertEqual(z(self.gj, "  vadodara "), "local")
+        self.assertEqual(z(self.gj, "Surat"), "state")
+        self.assertEqual(z(self.mh, "Vadodara"), "india")  # same name, other state: not local
+        self.assertEqual(z(self.mh, "Mumbai"), "india")
+
+    def test_local_is_free(self):
+        q = travel.quote(self.ph, self.gj, "Vadodara", 5)
+        self.assertEqual((q.total, q.allowed, q.lines), (0, True, []))
+
+    def test_other_city_same_state(self):
+        q = travel.quote(self.ph, self.gj, "Surat", 3)
+        self.assertEqual((q.trip_fee, q.stay_fee, q.total), (2000, 4500, 6500))
+
+    def test_other_state(self):
+        q = travel.quote(self.ph, self.mh, "Mumbai", 4)
+        self.assertEqual((q.trip_fee, q.stay_fee, q.total), (6000, 6000, 12000))
+        self.assertEqual([label for label, _ in q.lines], ["Travel", "Stay and food (4 days)"])
+
+    def test_zero_fees_mean_no_lines(self):
+        self.ph.travel_fee_state = self.ph.stay_fee_per_day = 0
+        q = travel.quote(self.ph, self.gj, "Surat", 2)
+        self.assertEqual((q.total, q.lines, q.allowed), (0, [], True))
+
+    def test_scope_city_and_state(self):
+        self.ph.travel_scope = "city"
+        self.assertFalse(travel.quote(self.ph, self.gj, "Surat").allowed)
+        self.assertTrue(travel.quote(self.ph, self.gj, "Vadodara").allowed)
+        self.ph.travel_scope = "state"
+        self.assertTrue(travel.quote(self.ph, self.gj, "Surat").allowed)
+        q = travel.quote(self.ph, self.mh, "Mumbai")
+        self.assertFalse(q.allowed)
+        self.assertIn("Gujarat", q.reason)
+
+    def test_no_place_yet_quotes_nothing(self):
+        self.assertEqual(travel.quote(self.ph, None, "Surat").total, 0)
+        self.assertEqual(travel.quote(self.ph, self.gj, "  ").total, 0)
+
+    def test_summary_includes_service_and_travel(self):
+        s = travel.summary(self.ph, None, 3, self.mh, "Mumbai")
+        self.assertEqual((s["service"], s["travel"], s["total"]), (16500, 10500, 27000))
+        self.assertEqual(s["lines"][0], ("Full day: 5,500 x 3 days", 16500))
+
+    # ---- a booking carries the charge
+    def test_local_booking_has_no_travel(self):
+        self.book()
+        b = Booking.objects.get()
+        self.assertEqual((b.travel_fee, b.travel_zone, b.amount), (0, "local", 5500))
+
+    def test_outstation_booking_adds_travel_to_the_amount(self):
+        self.book(state=self.mh, city="mumbai", end_date=self.d(22))   # 3 days
+        b = Booking.objects.get()
+        self.assertEqual((b.service_price, b.travel_fee, b.amount, b.travel_zone), (16500, 10500, 27000, "india"))
+        self.assertEqual(b.event_city, "Mumbai")
+
+    def test_the_price_shown_is_the_price_charged(self):
+        self.client.login(username="cust", password="pass12345")
+        shown = self.client.get(reverse("booking_quote", args=[self.ph.slug]), {
+            "date": self.d(20), "end_date": self.d(22), "state": self.mh.pk, "city": "Mumbai"}).json()["total"]
+        self.book(state=self.mh, city="Mumbai", end_date=self.d(22))
+        self.assertEqual(Booking.objects.get().amount, shown)
+
+    def test_scope_refuses_the_request(self):
+        self.ph.travel_scope = "state"
+        self.ph.save()
+        r = self.book(state=self.mh, city="Mumbai")
+        self.assertEqual(Booking.objects.count(), 0)
+        self.assertIn("event_city", r.context["form"].errors)
+        self.assertIn("only takes events within Gujarat", str(r.context["form"].errors))
+
+    def test_changing_the_policy_later_does_not_change_the_booking(self):
+        self.book(state=self.mh, city="Mumbai")
+        self.ph.travel_fee_india = 99999
+        self.ph.save()
+        b = Booking.objects.get()
+        self.assertEqual(b.travel_fee, 6000 + 1500)
+        self.assertEqual(b.amount, 5500 + 7500)
+
+    def test_old_booking_without_travel_is_unchanged(self):
+        b = Booking.objects.create(user=self.cust, photographer=self.ph, event_date=self.today + timedelta(days=9), price=7000)
+        self.assertEqual((b.travel_fee, b.amount, b.service_price), (0, 7000, 7000))
+
+    # ---- payment, emails
+    def test_payment_charges_service_plus_travel(self):
+        self.book(state=self.mh, city="Mumbai")
+        b = Booking.objects.get()
+        booking_flow.accept(b)
+        self.client.login(username="cust", password="pass12345")
+        page = self.client.get(reverse("payment", args=[b.pk]))
+        self.assertContains(page, "Travel and stay")
+        self.assertContains(page, "13000")
+        self.client.post(reverse("payment", args=[b.pk]), {"payment_method": "upi"})
+        self.assertEqual(Payment.objects.get().amount, 13000)
+
+    def test_emails_show_the_breakdown(self):
+        mail.outbox.clear()
+        self.book(state=self.mh, city="Mumbai")
+        to_pro = next(m for m in mail.outbox if "pro@example.com" in m.to)
+        self.assertIn("Travel and stay", to_pro.body)
+        self.assertIn("Rs.7500", to_pro.body)
+        to_cust = next(m for m in mail.outbox if "cust@example.com" in m.to)
+        self.assertIn("Rs.13000", to_cust.body)
+
+    def test_dashboards_show_travel_included(self):
+        self.book(state=self.mh, city="Mumbai")
+        self.assertContains(self.client.get(reverse("my_bookings")), "incl. &#8377;7500 travel")
+        self.client.login(username="pro", password="pass12345")
+        self.assertContains(self.client.get(reverse("pro_dashboard")), "incl. &#8377;7500 travel")
+
+    # ---- the live price box endpoint
+    def test_quote_endpoint(self):
+        r = self.client.get(reverse("booking_quote", args=[self.ph.slug]),
+                            {"date": self.d(20), "end_date": self.d(21), "state": self.gj.pk, "city": "Surat"})
+        j = r.json()
+        self.assertEqual((j["total"], j["allowed"], j["has_place"], j["days"]), (11000 + 2000 + 3000, True, True, 2))
+        self.assertEqual(j["lines"][0]["amount"], 11000)
+
+    def test_quote_endpoint_without_place_and_with_garbage(self):
+        j = self.client.get(reverse("booking_quote", args=[self.ph.slug]), {"date": "nonsense", "state": "x", "package": "zzz"}).json()
+        self.assertEqual((j["total"], j["has_place"], j["days"]), (5500, False, 1))
+
+    def test_quote_endpoint_reports_refusal_and_caps_days(self):
+        self.ph.travel_scope = "city"
+        self.ph.save()
+        j = self.client.get(reverse("booking_quote", args=[self.ph.slug]),
+                            {"date": self.d(5), "end_date": self.d(500), "state": self.gj.pk, "city": "Surat"}).json()
+        self.assertFalse(j["allowed"])
+        self.assertEqual(j["days"], availability.MAX_BOOKING_DAYS)
+
+    def test_quote_endpoint_ignores_another_photographers_package_and_hidden_profiles(self):
+        other = Photographer.objects.create(name="Other", bio="b", specialities="wedding", city=self.vad, price_per_day=100000,
+                                            status="approved")
+        pkg = Package.objects.create(photographer=other, tier="premium", price=90000)
+        j = self.client.get(reverse("booking_quote", args=[self.ph.slug]), {"package": pkg.pk}).json()
+        self.assertEqual(j["total"], 5500)
+        self.ph.status = "pending"
+        self.ph.save()
+        self.assertEqual(self.client.get(reverse("booking_quote", args=[self.ph.slug])).status_code, 404)
+
+    def test_quote_uses_the_chosen_package(self):
+        pkg = Package.objects.create(photographer=self.ph, tier="premium", price=12000)
+        j = self.client.get(reverse("booking_quote", args=[self.ph.slug]), {"package": pkg.pk}).json()
+        self.assertEqual(j["total"], 12000)
+
+    # ---- the photographer's page
+    def test_travel_page_permissions(self):
+        self.assertEqual(self.client.get(reverse("pro_travel")).status_code, 302)
+        self.client.login(username="cust", password="pass12345")
+        self.assertEqual(self.client.get(reverse("pro_travel")).status_code, 302)
+
+    def test_photographer_saves_travel_policy(self):
+        self.client.login(username="pro", password="pass12345")
+        self.assertContains(self.client.get(reverse("pro_travel")), "What customers see now")
+        r = self.client.post(reverse("pro_travel"), {"travel_scope": "state", "travel_fee_state": 3000,
+                                                     "travel_fee_india": 0, "stay_fee_per_day": 800})
+        self.assertEqual(r.status_code, 302)
+        self.ph.refresh_from_db()
+        self.assertEqual((self.ph.travel_scope, self.ph.travel_fee_state, self.ph.stay_fee_per_day), ("state", 3000, 800))
+
+    def test_travel_policy_rejects_silly_values(self):
+        self.client.login(username="pro", password="pass12345")
+        for bad in ({"travel_fee_state": -1}, {"travel_fee_india": 9999999}, {"stay_fee_per_day": "abc"}, {"travel_scope": "world"}):
+            data = {"travel_scope": "india", "travel_fee_state": 0, "travel_fee_india": 0, "stay_fee_per_day": 0, **bad}
+            self.assertEqual(self.client.post(reverse("pro_travel"), data).status_code, 200)
+        self.ph.refresh_from_db()
+        self.assertEqual(self.ph.travel_fee_india, 6000)
+
+    def test_public_profile_shows_the_policy(self):
+        html = self.client.get(self.url).content.decode()
+        self.assertIn("No travel charge in Vadodara.", html)
+        self.assertIn("Rs.6,000 travel plus Rs.1,500 per day", html)
+        self.ph.travel_scope = "city"
+        self.ph.save()
+        self.assertIn("Takes events in Vadodara only.", self.client.get(self.url).content.decode())
+
+    def test_admin_photographer_page_opens(self):
+        admin = User.objects.create_superuser("boss", "b@example.com", "pass12345")
+        self.client.login(username="boss", password="pass12345")
+        self.assertEqual(self.client.get(reverse("admin:photopholio_photographer_change", args=[self.ph.pk])).status_code, 200)
+        self.assertEqual(self.client.get(reverse("admin:photopholio_booking_changelist")).status_code, 200)
+
+
+def _complete_and_confirm(b):
+    """Finish a shoot and have the customer confirm it, so the payout becomes ready (the old one-step behaviour)."""
+    from django.utils import timezone
+    booking_flow.mark_completed(b)
+    b.refresh_from_db()
+    b.customer_confirmed_at = timezone.now()
+    b.save(update_fields=["customer_confirmed_at"])
+    money.release_if_due(b)
+    b.refresh_from_db()
+
+
+class MoneyTests(TestCase):
+    """Phase 5C: commission, holding the money, payouts and what the admin sees."""
+
+    def setUp(self):
+        country = Country.objects.create(name="India")
+        self.gj = State.objects.create(country=country, name="Gujarat")
+        self.mh = State.objects.create(country=country, name="Maharashtra")
+        city = City.objects.create(state=self.gj, name="Vadodara")
+        self.pro_user = User.objects.create_user("pro", password="pass12345", first_name="Pro", email="pro@example.com")
+        UserProfile.objects.create(user=self.pro_user, role="photographer")
+        self.ph = Photographer.objects.create(name="Money Snap", bio="bio", specialities="wedding", city=city, price_per_day=5500,
+                                              user=self.pro_user, status="approved", payout_details="money@upi")
+        self.cust = User.objects.create_user("cust", password="pass12345", first_name="Cust", email="cust@example.com")
+        self.admin = User.objects.create_superuser("boss", "b@example.com", "pass12345")
+        self.today = timezone.localdate()
+
+    def paid(self, service=22000, travel=0, days_ahead=20, length=1, status="confirmed", ph=None):
+        b = Booking.objects.create(user=self.cust, photographer=ph or self.ph, event_date=self.today + timedelta(days=days_ahead),
+                                   end_date=self.today + timedelta(days=days_ahead + length - 1), status=status,
+                                   price=service, day_rate=service // length, travel_fee=travel)
+        Payment.objects.create(user=self.cust, booking=b, amount=service + travel, payment_method="upi", status="completed")
+        money.on_paid(b)
+        b.refresh_from_db()
+        return b
+
+    # ---- the split
+    def test_commission_on_the_service_price(self):
+        b = self.paid(22000)  # the 4-day example
+        self.assertEqual((b.commission_percent, b.platform_fee, b.payout_amount, b.payout_status), (10, 2200, 19800, "held"))
+
+    def test_travel_is_passed_on_without_commission(self):
+        b = self.paid(22000, travel=6000)
+        self.assertEqual((b.platform_fee, b.payout_amount), (2200, 25800))
+
+    def test_own_percent_and_zero_percent(self):
+        self.ph.commission_percent = 15
+        self.ph.save()
+        self.assertEqual(self.paid(20000).platform_fee, 3000)
+        self.ph.commission_percent = 0
+        self.ph.save()
+        b = self.paid(20000, days_ahead=40)
+        self.assertEqual((b.platform_fee, b.payout_amount), (0, 20000))
+
+    @override_settings(PLATFORM_COMMISSION_PERCENT=20)
+    def test_site_default_comes_from_settings(self):
+        self.assertEqual(self.paid(10000).platform_fee, 2000)
+
+    def test_split_never_goes_negative_or_over(self):
+        for retained, service, total, pct in ((0, 100, 100, 10), (100, 1000, 100, 10), (1, 1, 1, 50), (999, 333, 999, 7)):
+            s = money._split(retained, service, total, pct)
+            self.assertTrue(0 <= s.fee <= retained and s.fee + s.payout == retained)
+
+    def test_preview_before_payment_and_earnings_property(self):
+        b = Booking.objects.create(user=self.cust, photographer=self.ph, event_date=self.today + timedelta(days=9), price=10000)
+        self.assertEqual(tuple(b.earnings), (10, 1000, 9000))
+        paid = self.paid(10000, days_ahead=30)
+        self.assertEqual(tuple(paid.earnings), (10, 1000, 9000))
+
+    def test_changing_the_percent_later_keeps_the_booking_split(self):
+        b = self.paid(10000, days_ahead=-1)
+        self.ph.commission_percent = 40
+        self.ph.save()
+        money.on_completed(b)
+        b.refresh_from_db()
+        self.assertEqual((b.platform_fee, b.payout_status), (1000, "held"))  # held until the customer confirms
+        _complete_and_confirm(b)
+        self.assertEqual((b.platform_fee, b.payout_status), (1000, "ready"))
+
+    # ---- the life of the money
+    def test_paying_through_the_site_starts_holding(self):
+        b = Booking.objects.create(user=self.cust, photographer=self.ph, event_date=self.today + timedelta(days=12), status="accepted",
+                                   accepted_at=timezone.now(), price=8000, day_rate=8000, travel_fee=2000)
+        self.client.login(username="cust", password="pass12345")
+        self.client.post(reverse("payment", args=[b.pk]), {"payment_method": "upi"})
+        b.refresh_from_db()
+        self.assertEqual((b.payout_status, b.platform_fee, b.payout_amount), ("held", 800, 9200))
+
+    def test_completing_makes_it_ready(self):
+        b = self.paid(10000, days_ahead=-1)
+        _complete_and_confirm(b)
+        b.refresh_from_db()
+        self.assertEqual(b.payout_status, "ready")
+
+    def test_paid_before_this_feature_gets_a_split_on_completion(self):
+        b = Booking.objects.create(user=self.cust, photographer=self.ph, event_date=self.today - timedelta(days=1), status="confirmed", price=10000)
+        Payment.objects.create(user=self.cust, booking=b, amount=10000, payment_method="upi", status="completed")
+        _complete_and_confirm(b)
+        b.refresh_from_db()
+        self.assertEqual((b.payout_status, b.platform_fee), ("ready", 1000))
+
+    def test_customer_cancels_with_half_refund_shares_the_loss(self):
+        b = self.paid(20000, days_ahead=1)  # 1 day before: 50% refund
+        booking_flow.cancel_by_customer(b, today=self.today)
+        b.refresh_from_db()
+        self.assertEqual((b.payout_status, b.platform_fee, b.payout_amount), ("ready", 1000, 9000))
+
+    def test_full_refunds_leave_nothing_to_pay(self):
+        b = self.paid(20000, days_ahead=10)
+        booking_flow.cancel_by_customer(b, today=self.today)
+        b.refresh_from_db()
+        self.assertEqual((b.payout_status, b.platform_fee, b.payout_amount), ("void", 0, 0))
+        b2 = self.paid(20000, days_ahead=30)
+        booking_flow.cancel_by_photographer(b2, "Ill")
+        b2.refresh_from_db()
+        self.assertEqual((b2.payout_status, b2.payout_amount), ("void", 0))
+
+    def test_travel_is_refunded_proportionally(self):
+        b = self.paid(20000, travel=5000, days_ahead=1)  # paid 25000, half back = 12500 kept
+        booking_flow.cancel_by_customer(b, today=self.today)
+        b.refresh_from_db()
+        # kept 12500, service share 10000, commission 1000, photographer 11500
+        self.assertEqual((b.platform_fee, b.payout_amount), (1000, 11500))
+
+    def test_admin_refund_after_completion_before_and_after_payout(self):
+        b = self.paid(10000, days_ahead=-1)
+        _complete_and_confirm(b)
+        booking_flow.admin_refund_in_full(b)
+        b.refresh_from_db()
+        self.assertEqual(b.payout_status, "void")
+        c = self.paid(10000, days_ahead=-3)
+        _complete_and_confirm(c)
+        c.refresh_from_db()
+        money.mark_paid(c, "UTR123456")
+        c.refresh_from_db()
+        booking_flow.admin_refund_in_full(c)
+        c.refresh_from_db()
+        self.assertEqual(c.payout_status, "recover")
+        self.assertIn("Recover Rs.9000", c.payout_note)
+        money.mark_recovered(c, "got it back")
+        c.refresh_from_db()
+        self.assertEqual(c.payout_status, "void")
+
+    def test_unpaid_cancellation_touches_no_money(self):
+        b = Booking.objects.create(user=self.cust, photographer=self.ph, event_date=self.today + timedelta(days=9), status="accepted",
+                                   accepted_at=timezone.now(), price=5000)
+        booking_flow.cancel_by_customer(b, today=self.today)
+        b.refresh_from_db()
+        self.assertEqual((b.payout_status, b.platform_fee, b.payout_amount), ("", 0, 0))
+
+    # ---- paying the photographer
+    def ready(self, **kw):
+        b = self.paid(days_ahead=-1, **kw)
+        _complete_and_confirm(b)
+        b.refresh_from_db()
+        return b
+
+    def test_mark_paid_needs_ready_and_a_reference(self):
+        held = self.paid(10000)
+        with self.assertRaises(booking_flow.FlowError):
+            money.mark_paid(held, "UTR111222")
+        b = self.ready()
+        for bad in ("", "  ", "ab", "x" * 61):
+            with self.assertRaises(booking_flow.FlowError):
+                money.mark_paid(b, bad)
+        mail.outbox.clear()
+        money.mark_paid(b, "  UTR  998877 ")
+        b.refresh_from_db()
+        self.assertEqual((b.payout_status, b.payout_reference), ("paid", "UTR 998877"))
+        self.assertIsNotNone(b.payout_paid_at)
+        sent = next(m for m in mail.outbox if "pro@example.com" in m.to)
+        self.assertIn("UTR 998877", sent.body)
+        with self.assertRaises(booking_flow.FlowError):
+            money.mark_paid(b, "UTR000111")  # no double payment
+
+    # ---- photographer pages
+    def test_earnings_page(self):
+        b = self.ready(service=10000, travel=2000)
+        held = self.paid(5000, days_ahead=40)
+        self.client.login(username="pro", password="pass12345")
+        r = self.client.get(reverse("pro_earnings"))
+        self.assertContains(r, "10%")
+        self.assertEqual((r.context["totals"]["ready"]["money"], r.context["totals"]["held"]["money"]), (11000, 4500))
+        self.assertNotContains(r, "Add where to send")
+        money.mark_paid(b, "UTR556677")
+        self.assertContains(self.client.get(reverse("pro_earnings")), "UTR556677")
+
+    def test_earnings_page_permissions_and_missing_payout_warning(self):
+        self.assertEqual(self.client.get(reverse("pro_earnings")).status_code, 302)
+        self.client.login(username="cust", password="pass12345")
+        self.assertEqual(self.client.get(reverse("pro_earnings")).status_code, 302)
+        self.ph.payout_details = ""
+        self.ph.save()
+        self.client.login(username="pro", password="pass12345")
+        self.assertContains(self.client.get(reverse("pro_earnings")), "Add where to send")
+
+    def test_dashboard_shows_what_you_earn(self):
+        Booking.objects.create(user=self.cust, photographer=self.ph, event_date=self.today + timedelta(days=9), price=10000)
+        self.client.login(username="pro", password="pass12345")
+        self.assertContains(self.client.get(reverse("pro_dashboard")), "You earn &#8377;9000 after 10% commission")
+
+    def test_profile_form_saves_payout_details(self):
+        self.client.login(username="pro", password="pass12345")
+        data = {"name": "Money Snap", "specialities": "wedding", "state": self.gj.pk, "city_name": "Vadodara", "experience_years": 3,
+                "price_per_day": 5500, "bio": "b" * 60, "payout_details": "new@upi", "is_available": "on"}
+        self.client.post(reverse("pro_profile"), data)
+        self.ph.refresh_from_db()
+        self.assertEqual(self.ph.payout_details, "new@upi")
+
+    def test_policy_page_explains_fees(self):
+        self.assertContains(self.client.get(reverse("cancellation_policy")), "no extra fee for you")
+
+    # ---- admin
+    def test_payouts_page_lists_and_pays(self):
+        b = self.ready(service=10000)
+        self.client.login(username="boss", password="pass12345")
+        page = self.client.get(reverse("admin:photopholio_payouts"))
+        self.assertContains(page, "money@upi")
+        self.assertEqual(page.context["ready_total"], 9000)
+        r = self.client.post(reverse("admin:photopholio_payout_pay", args=[b.pk]), {"reference": "UTR424242"})
+        self.assertEqual(r.status_code, 302)
+        b.refresh_from_db()
+        self.assertEqual(b.payout_status, "paid")
+        self.assertContains(self.client.get(reverse("admin:photopholio_payouts")), "UTR424242")
+
+    def test_payouts_pay_rejects_bad_input_and_get(self):
+        b = self.ready()
+        self.client.login(username="boss", password="pass12345")
+        self.client.post(reverse("admin:photopholio_payout_pay", args=[b.pk]), {"reference": ""})
+        self.assertEqual(self.client.get(reverse("admin:photopholio_payout_pay", args=[b.pk])).status_code, 302)
+        b.refresh_from_db()
+        self.assertEqual(b.payout_status, "ready")
+
+    def test_payouts_pages_need_permission(self):
+        b = self.ready()
+        staff = User.objects.create_user("clerk", password="pass12345", is_staff=True)
+        for who in (None, "cust", "pro", "clerk"):
+            c = self.client
+            c.logout()
+            if who:
+                c.login(username=who, password="pass12345")
+            for name, args in (("photopholio_payouts", []), ("photopholio_payouts_csv", []), ("photopholio_payout_pay", [b.pk])):
+                r = c.post(reverse(f"admin:{name}", args=args), {"reference": "UTR999888"})
+                self.assertIn(r.status_code, (302, 403), (who, name))
+                if r.status_code == 302:
+                    self.assertIn("login", r["Location"])
+        b.refresh_from_db()
+        self.assertEqual(b.payout_status, "ready")
+
+    def test_csv_export_and_formula_safety(self):
+        evil = Photographer.objects.create(name="=SUM(1+1)", bio="b", specialities="wedding", city=self.ph.city, price_per_day=5000, status="approved")
+        self.ready()
+        self.paid(3000, ph=evil, days_ahead=50)
+        self.client.login(username="boss", password="pass12345")
+        r = self.client.get(reverse("admin:photopholio_payouts_csv"))
+        self.assertEqual(r["Content-Type"], "text/csv")
+        body = r.content.decode()
+        self.assertIn("Photographer gets", body)
+        self.assertIn("'=SUM(1+1)", body)
+        self.assertNotIn(",=SUM", body)
+        self.assertEqual(len(body.strip().splitlines()), 3)
+
+    def test_completed_action_in_admin_makes_it_ready(self):
+        b = self.paid(10000, days_ahead=-1)
+        self.client.login(username="boss", password="pass12345")
+        self.client.post(reverse("admin:photopholio_booking_changelist"), {"action": "mark_completed", "_selected_action": [b.pk]})
+        b.refresh_from_db()
+        self.assertEqual((b.status, b.payout_status), ("completed", "ready"))
+
+    def test_admin_pages_open(self):
+        self.client.login(username="boss", password="pass12345")
+        self.assertEqual(self.client.get(reverse("admin:photopholio_photographer_change", args=[self.ph.pk])).status_code, 200)
+        self.assertEqual(self.client.get(reverse("admin:photopholio_booking_changelist")).status_code, 200)
+
+    # ---- analytics
+    def test_analytics_money_cards(self):
+        paid = self.ready(service=10000, travel=2000)
+        money.mark_paid(paid, "UTR101010")
+        self.ready(service=20000)
+        self.paid(5000, days_ahead=30)
+        multi = self.paid(8000, days_ahead=40, length=4)
+        data = analytics.dashboard_data()
+        m, e = data["money"], data["events"]
+        self.assertEqual((m["paid_out"], m["ready"], m["held"]), (11000, 18000, 4500 + 7200))
+        self.assertEqual((m["commission_earned"], m["commission_pending"]), (1000 + 2000, 500 + 800))
+        self.assertEqual(m["travel_collected"], 2000)
+        self.assertEqual((e["paid_bookings"], e["multi_day"]), (4, 1))
+        self.assertEqual(e["avg_days"], round((1 + 1 + 1 + 4) / 4, 1))
+        self.assertEqual(len(data["chart"]["commission"]), analytics.MONTHS)
+        self.client.login(username="boss", password="pass12345")
+        page = self.client.get(reverse("admin:photopholio_analytics"))
+        self.assertContains(page, "PhotoPholio commission earned")
+        self.assertContains(page, "Where the money goes")
+
+    def test_analytics_with_no_money_at_all(self):
+        data = analytics.dashboard_data()
+        self.assertEqual((data["money"]["commission_earned"], data["events"]["avg_days"], data["events"]["multi_day_pct"]), (0, 0, None))
+        self.client.login(username="boss", password="pass12345")
+        self.assertEqual(self.client.get(reverse("admin:photopholio_analytics")).status_code, 200)
+
+    def test_top_event_cities(self):
+        for city in ("Surat", "Surat", "Pune"):
+            Booking.objects.create(user=self.cust, photographer=self.ph, event_date=self.today + timedelta(days=9), event_city=city)
+        top = analytics.dashboard_data()["events"]["top_cities"]
+        self.assertEqual((top[0]["event_city"], top[0]["n"]), ("Surat", 2))
+
+
+class SignupThenLoginTests(TestCase):
+    """Creating an account does not log you in: signup -> login page (username filled in) -> your own dashboard."""
+
+    def signup(self, role, username="newperson"):
+        return self.client.post(reverse("register"), {
+            "role": role, "first_name": "New", "username": username, "email": f"{username}@example.com",
+            "password1": "Str0ng-pass-99", "password2": "Str0ng-pass-99"})
+
+    def test_signup_does_not_log_you_in(self):
+        r = self.signup("customer")
+        self.assertRedirects(r, reverse("login"), fetch_redirect_response=False)
+        self.assertNotIn("_auth_user_id", self.client.session)
+        self.assertTrue(User.objects.filter(username="newperson").exists())
+
+    def test_login_page_after_signup_has_the_username_and_a_message(self):
+        self.signup("customer")
+        page = self.client.get(reverse("login"))
+        self.assertContains(page, 'value="newperson"')
+        self.assertContains(page, "Your account is created")
+        self.assertNotContains(page, "Str0ng-pass-99")
+        # only for the next visit
+        self.assertNotContains(self.client.get(reverse("login")), 'value="newperson"')
+
+    def test_customer_logs_in_and_lands_on_my_bookings(self):
+        self.signup("customer")
+        r = self.client.post(reverse("login"), {"username": "newperson", "password": "Str0ng-pass-99"})
+        self.assertRedirects(r, reverse("my_bookings"), fetch_redirect_response=False)
+        self.assertEqual(self.client.get(reverse("my_bookings")).status_code, 200)
+
+    def test_photographer_signup_goes_to_the_photographer_login_then_the_dashboard(self):
+        r = self.signup("photographer", "lensperson")
+        self.assertRedirects(r, reverse("pro_login"), fetch_redirect_response=False)
+        page = self.client.get(reverse("pro_login"))
+        self.assertContains(page, 'value="lensperson"')
+        self.assertContains(page, "Please log in to set up your profile")
+        r = self.client.post(reverse("pro_login"), {"username": "lensperson", "password": "Str0ng-pass-99"})
+        self.assertRedirects(r, reverse("pro_dashboard"), fetch_redirect_response=False)
+        self.assertContains(self.client.get(reverse("pro_dashboard")), "Create my profile")
+
+    def test_next_page_still_wins_after_signup(self):
+        self.signup("customer")
+        r = self.client.post(reverse("login") + "?next=/contact/", {"username": "newperson", "password": "Str0ng-pass-99"})
+        self.assertRedirects(r, "/contact/", fetch_redirect_response=False)
+
+    def test_invalid_signup_stays_on_the_form(self):
+        r = self.client.post(reverse("register"), {"role": "customer", "username": "x"})
+        self.assertEqual(r.status_code, 200)
+        self.assertNotIn("just_registered", self.client.session)
+
+    def test_password_field_gets_the_focus_when_username_is_filled(self):
+        self.signup("customer")
+        html = self.client.get(reverse("login")).content.decode()
+        password_tag = html[html.index('name="password"') - 120: html.index('name="password"') + 120]
+        self.assertIn("autofocus", password_tag)
+
+
+class TrackingTests(TestCase):
+    """Phase 5D: arrived / start / finish, customer confirmation, 48h auto-confirm, reported problems."""
+
+    def setUp(self):
+        country = Country.objects.create(name="India")
+        gj = State.objects.create(country=country, name="Gujarat")
+        city = City.objects.create(state=gj, name="Vadodara")
+        self.pro_user = User.objects.create_user("pro", password="pass12345", first_name="Pro", email="pro@example.com")
+        UserProfile.objects.create(user=self.pro_user, role="photographer")
+        self.ph = Photographer.objects.create(name="Track Snap", bio="bio", specialities="wedding", city=city, price_per_day=5500,
+                                              user=self.pro_user, status="approved")
+        self.cust = User.objects.create_user("cust", password="pass12345", first_name="Cust", email="cust@example.com")
+        self.other = User.objects.create_user("other", password="pass12345", email="o@example.com")
+        self.admin = User.objects.create_superuser("boss", "b@example.com", "pass12345")
+        self.today = timezone.localdate()
+
+    def shoot(self, start=0, length=1, price=10000):
+        b = Booking.objects.create(user=self.cust, photographer=self.ph, event_date=self.today + timedelta(days=start),
+                                   end_date=self.today + timedelta(days=start + length - 1), status="confirmed",
+                                   price=price, day_rate=price // length)
+        Payment.objects.create(user=self.cust, booking=b, amount=price, payment_method="upi", status="completed")
+        money.on_paid(b)
+        b.refresh_from_db()
+        return b
+
+    def tap(self, b, *steps, today=None):
+        for s in steps:
+            tracking.photographer_step(b.pk, self.pro_user, s, today=today)
+        b.refresh_from_db()
+
+    # ---- photographer taps
+    def test_full_single_day_flow_completes_and_waits_for_customer(self):
+        b = self.shoot()
+        self.tap(b, "arrived", "start", "finish")
+        self.assertEqual((b.status, b.payout_status), ("completed", "held"))
+        self.assertIsNotNone(b.completed_at)
+        self.assertEqual(ShootDay.objects.filter(booking=b).count(), 1)
+        self.assertEqual([e.action for e in ShootEvent.objects.filter(booking=b).order_by("pk")][:3], ["arrived", "started", "finished"])
+        tracking.confirm_completed(b.pk, self.cust)
+        b.refresh_from_db()
+        self.assertEqual((b.payout_status, b.customer_confirmed_by_customer), ("ready", True))
+
+    def test_order_and_duplicates_are_refused(self):
+        b = self.shoot()
+        for step in ("start", "finish"):
+            with self.assertRaises(booking_flow.FlowError):
+                self.tap(b, step)
+        self.tap(b, "arrived")
+        with self.assertRaises(booking_flow.FlowError):
+            self.tap(b, "arrived")
+        with self.assertRaises(booking_flow.FlowError):
+            self.tap(b, "finish")
+        self.tap(b, "start")
+        with self.assertRaises(booking_flow.FlowError):
+            self.tap(b, "start")
+        with self.assertRaises(booking_flow.FlowError):
+            self.tap(b, "nonsense")
+
+    def test_only_on_the_event_day_and_only_the_owner(self):
+        future = self.shoot(start=3)
+        with self.assertRaises(booking_flow.FlowError):
+            self.tap(future, "arrived")
+        b = self.shoot(start=0)
+        with self.assertRaises(booking_flow.FlowError):
+            tracking.photographer_step(b.pk, self.other, "arrived")
+        b.status = "accepted"
+        b.save()
+        with self.assertRaises(booking_flow.FlowError):
+            self.tap(b, "arrived")
+
+    def test_multi_day_completes_only_after_the_last_day(self):
+        b = self.shoot(start=-1, length=2, price=20000)
+        self.tap(b, "arrived", "start", "finish", today=self.today - timedelta(days=1))
+        self.assertEqual(b.status, "confirmed")
+        self.tap(b, "arrived", "start", "finish")
+        self.assertEqual(b.status, "completed")
+        self.assertEqual(ShootDay.objects.filter(booking=b).count(), 2)
+
+    # ---- customer
+    def test_customer_arrival_check_and_permissions(self):
+        b = self.shoot()
+        with self.assertRaises(booking_flow.FlowError):
+            tracking.confirm_arrival(b.pk, self.cust, self.today)
+        self.tap(b, "arrived")
+        with self.assertRaises(booking_flow.FlowError):
+            tracking.confirm_arrival(b.pk, self.other, self.today)
+        tracking.confirm_arrival(b.pk, self.cust, self.today)
+        with self.assertRaises(booking_flow.FlowError):
+            tracking.confirm_arrival(b.pk, self.cust, self.today)
+        self.assertTrue(ShootDay.objects.get(booking=b).customer_seen_at)
+
+    def test_confirm_needs_completed_and_is_once_only(self):
+        b = self.shoot()
+        with self.assertRaises(booking_flow.FlowError):
+            tracking.confirm_completed(b.pk, self.cust)
+        self.tap(b, "arrived", "start", "finish")
+        with self.assertRaises(booking_flow.FlowError):
+            tracking.confirm_completed(b.pk, self.other)
+        tracking.confirm_completed(b.pk, self.cust)
+        with self.assertRaises(booking_flow.FlowError):
+            tracking.confirm_completed(b.pk, self.cust)
+
+    def test_auto_confirm_after_48_hours_only(self):
+        b = self.shoot()
+        self.tap(b, "arrived", "start", "finish")
+        self.assertEqual(tracking.auto_confirm_due(now=timezone.now() + timedelta(hours=47)), 0)
+        self.assertEqual(tracking.auto_confirm_due(now=timezone.now() + timedelta(hours=49)), 1)
+        b.refresh_from_db()
+        self.assertEqual((b.payout_status, b.customer_confirmed_by_customer), ("ready", False))
+        self.assertEqual(tracking.auto_confirm_due(now=timezone.now() + timedelta(hours=99)), 0)
+
+    def test_expire_stale_runs_the_auto_confirm(self):
+        b = self.shoot()
+        self.tap(b, "arrived", "start", "finish")
+        Booking.objects.filter(pk=b.pk).update(completed_at=timezone.now() - timedelta(hours=60))
+        booking_flow.expire_stale()
+        b.refresh_from_db()
+        self.assertEqual(b.payout_status, "ready")
+
+    # ---- reported problems
+    def test_report_validation_and_freeze(self):
+        b = self.shoot()
+        for kind, text in (("bad", "x" * 20), ("not_arrived", "short"), ("not_arrived", "x" * 1001)):
+            with self.assertRaises(booking_flow.FlowError):
+                tracking.report_problem(b.pk, self.cust, kind, text)
+        with self.assertRaises(booking_flow.FlowError):
+            tracking.report_problem(b.pk, self.other, "not_arrived", "The photographer never came at all.")
+        tracking.report_problem(b.pk, self.cust, "not_arrived", "The photographer never came at all.")
+        b.refresh_from_db()
+        self.assertEqual(b.dispute_status, "open")
+        with self.assertRaises(booking_flow.FlowError):
+            tracking.report_problem(b.pk, self.cust, "other", "Trying a second report here.")
+        self.tap(b, "arrived", "start", "finish")  # photographer finishes anyway
+        with self.assertRaises(booking_flow.FlowError):
+            tracking.confirm_completed(b.pk, self.cust)
+        self.assertEqual(tracking.auto_confirm_due(now=timezone.now() + timedelta(days=5)), 0)
+        b.refresh_from_db()
+        self.assertEqual(b.payout_status, "held")
+        with self.assertRaises(booking_flow.FlowError):
+            money.mark_paid(b, "UTR123456")
+
+    def test_cannot_report_before_the_event(self):
+        b = self.shoot(start=5)
+        with self.assertRaises(booking_flow.FlowError):
+            tracking.report_problem(b.pk, self.cust, "not_arrived", "It is not even the day yet.")
+
+    def test_admin_decisions_need_a_note_and_an_open_report(self):
+        b = self.shoot()
+        with self.assertRaises(booking_flow.FlowError):
+            tracking.resolve_dispute(b.pk, self.admin, "pay", "long enough note")
+        tracking.report_problem(b.pk, self.cust, "quality", "The photos were far too blurry to use.")
+        with self.assertRaises(booking_flow.FlowError):
+            tracking.resolve_dispute(b.pk, self.admin, "pay", "")
+        with self.assertRaises(booking_flow.FlowError):
+            tracking.resolve_dispute(b.pk, self.admin, "bogus", "long enough note")
+
+    def test_admin_pay_releases_the_money(self):
+        b = self.shoot()
+        tracking.report_problem(b.pk, self.cust, "quality", "The photos were far too blurry to use.")
+        tracking.resolve_dispute(b.pk, self.admin, "pay", "Photographer showed the delivered photos.")
+        b.refresh_from_db()
+        self.assertEqual((b.dispute_status, b.dispute_outcome, b.status, b.payout_status), ("resolved", "pay", "completed", "ready"))
+        self.assertTrue(ShootEvent.objects.filter(booking=b, action="decided_pay").exists())
+
+    def test_admin_dismiss_releases_the_money(self):
+        b = self.shoot()
+        tracking.report_problem(b.pk, self.cust, "other", "Something felt off about the whole shoot.")
+        tracking.resolve_dispute(b.pk, self.admin, "dismiss", "No evidence of a problem.")
+        b.refresh_from_db()
+        self.assertEqual((b.dispute_outcome, b.payout_status), ("dismiss", "ready"))
+
+    def test_admin_refund_returns_the_money_and_never_pays_out(self):
+        b = self.shoot()
+        tracking.report_problem(b.pk, self.cust, "not_arrived", "The photographer never came at all.")
+        tracking.resolve_dispute(b.pk, self.admin, "refund", "Photographer did not show up.")
+        b.refresh_from_db()
+        self.assertEqual((b.status, b.dispute_outcome, b.payout_status), ("cancelled", "refund", "void"))
+        self.assertEqual(b.paid_payment.refund_status if b.paid_payment else "pending", b.paid_payment.refund_status if b.paid_payment else "pending")
+        self.assertEqual(Payment.objects.get(booking=b).refund_status, "pending")
+
+    def test_old_completed_booking_without_completed_at_still_pays(self):
+        b = self.shoot(start=-2)
+        Booking.objects.filter(pk=b.pk).update(status="completed", completed_at=None)
+        b.refresh_from_db()
+        self.assertTrue(money.release_if_due(b))
+
+    # ---- pages
+    def test_pages_render_and_actions_work(self):
+        b = self.shoot()
+        self.client.login(username="pro", password="pass12345")
+        self.assertContains(self.client.get(reverse("pro_dashboard")), reverse("pro_shoot", args=[b.pk, "arrived"]))
+        self.client.post(reverse("pro_shoot", args=[b.pk, "arrived"]))
+        self.assertTrue(ShootDay.objects.get(booking=b).arrived_at)
+        self.assertEqual(self.client.get(reverse("pro_shoot", args=[b.pk, "arrived"])).status_code, 405)
+        self.assertEqual(self.client.post(reverse("pro_shoot", args=[b.pk, "fly"])).status_code, 404)
+        self.client.logout()
+        self.client.login(username="cust", password="pass12345")
+        self.assertEqual(self.client.get(reverse("my_bookings")).status_code, 200)
+        self.client.post(reverse("booking_arrival_seen", args=[b.pk, self.today.isoformat()]))
+        self.assertTrue(ShootDay.objects.get(booking=b).customer_seen_at)
+        self.assertEqual(self.client.get(reverse("booking_report", args=[b.pk])).status_code, 200)
+        self.client.post(reverse("booking_report", args=[b.pk]), {"kind": "quality", "text": "The photos were far too blurry to use."})
+        b.refresh_from_db()
+        self.assertEqual(b.dispute_status, "open")
+        self.assertContains(self.client.get(reverse("my_bookings")), "reported")
+        self.client.logout()
+        self.client.login(username="other", password="pass12345")
+        self.assertEqual(self.client.get(reverse("booking_report", args=[b.pk])).status_code, 404)
+
+    def test_admin_disputes_page_and_resolve_view(self):
+        b = self.shoot()
+        tracking.report_problem(b.pk, self.cust, "not_arrived", "The photographer never came at all.")
+        self.client.login(username="cust", password="pass12345")
+        self.assertIn(self.client.get(reverse("admin:photopholio_disputes")).status_code, (302, 403))
+        self.client.logout()
+        self.client.login(username="boss", password="pass12345")
+        page = self.client.get(reverse("admin:photopholio_disputes"))
+        self.assertContains(page, "never came")
+        self.client.post(reverse("admin:photopholio_dispute_resolve", args=[b.pk]), {"outcome": "dismiss", "note": "Photos were delivered."})
+        b.refresh_from_db()
+        self.assertEqual(b.dispute_outcome, "dismiss")
+        self.assertEqual(self.client.get(reverse("admin:photopholio_booking_change", args=[b.pk])).status_code, 200)

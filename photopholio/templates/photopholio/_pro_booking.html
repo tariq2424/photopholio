@@ -1,10 +1,17 @@
 <div class="booking">
-  <div class="date-badge"><b>{{ b.event_date|date:"j" }}</b><span>{{ b.event_date|date:"M Y" }}</span></div>
+  <div class="date-badge"><b>{{ b.event_date|date:"j" }}</b><span>{% if b.is_multi_day %}{{ b.days }} days{% else %}{{ b.event_date|date:"M Y" }}{% endif %}</span></div>
   <div class="grow">
     <h3 class="mb-0">{{ b.user.first_name|default:b.user.username }}</h3>
-    <span class="muted small">{% if b.package_name %}{{ b.package_name }}, {% endif %}&#8377;{{ b.amount }}{% if b.is_paid and b.status != 'cancelled' %} paid{% endif %}{% if b.tool %} &middot; {{ b.tool }}{% endif %}</span>
+    <div class="small"><strong>{{ b.date_label }}</strong>{% if b.start_time %} &middot; {{ b.start_time|time:"g:i a" }}{% endif %}</div>
+    <span class="muted small">{% if b.package_name %}{{ b.package_name }}, {% endif %}&#8377;{{ b.amount }}{% if b.is_multi_day %} ({{ b.days }} days &times; &#8377;{{ b.day_rate }}){% endif %}{% if b.travel_fee %} incl. &#8377;{{ b.travel_fee }} travel{% endif %}{% if b.is_paid and b.status != 'cancelled' %} paid{% endif %}{% if b.tool %} &middot; {{ b.tool }}{% endif %}</span>
+    {% include 'photopholio/_event_where.html' with b=b %}
+    {% include 'photopholio/_shoot_tracker.html' with b=b role='pro' %}
+    {% if b.status == 'completed' and b.awaiting_confirmation %}<div class="small muted">Waiting for the customer to confirm the shoot (done automatically after {{ b.confirm_deadline|date:"j M, g:i a" }}). Your payout is released after that.</div>{% endif %}
+    {% if b.dispute_status == 'open' %}<div class="small text-danger"><strong>The customer reported a problem.</strong> Nobody is blamed yet. Your payout is on hold until the admin decides.</div>
+    {% elif b.dispute_status == 'resolved' and b.dispute_outcome != 'closed' %}<div class="small muted">Report reviewed: {{ b.get_dispute_outcome_display }}. {{ b.dispute_note }}</div>{% endif %}
+    {% if b.status != 'cancelled' and b.status != 'declined' %}{% with e=b.earnings %}<div class="small muted">You earn &#8377;{{ e.payout }} after {{ e.percent }}% commission (&#8377;{{ e.fee }}, on the service price only).</div>{% endwith %}{% endif %}
     {% if b.status == 'accepted' %}<div class="small muted">Waiting for payment until {{ b.payment_deadline|date:"j M, g:i a" }}.</div>{% endif %}
-    {% if b.status == 'confirmed' and not b.can_complete %}<div class="small muted">You can mark it completed on the event date.</div>{% endif %}
+    {% if b.status == 'confirmed' and not b.can_complete %}<div class="small muted">Tap I've arrived, Start and Finish on the day of the event. Finishing the last day completes the booking.</div>{% endif %}
     {% if b.status == 'cancelled' or b.status == 'declined' %}<div class="small muted">{% if b.cancelled_by == 'customer' %}Cancelled by the customer.{% elif b.cancelled_by == 'photographer' %}Cancelled by you.{% elif b.cancelled_by == 'system' %}{{ b.cancel_reason }}{% endif %}</div>{% endif %}
   </div>
   <span class="status status-{{ b.status }}">{{ b.get_status_display }}</span>

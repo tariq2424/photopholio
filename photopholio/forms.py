@@ -6,7 +6,7 @@ from django.contrib.auth.models import User
 from django.core.files.uploadedfile import UploadedFile
 from django.utils import timezone
 
-from . import availability
+from . import availability, travel
 from .models import (BlockedDate, Booking, City, ContactUs, Feedback, Package, Payment, Photo, Photographer,
                      Portfolio, State, UserProfile)
 from .accounts import authenticate_identifier
@@ -84,14 +84,26 @@ class BookingForm(BootstrapMixin, forms.ModelForm):
     # Shown only when the photographer has packages. Without any, the booking is for the plain day rate.
     package = PackageChoice(queryset=Package.objects.none(), widget=forms.RadioSelect, empty_label=None,
                             label="Package", error_messages={"required": "Please choose a package."})
-    field_order = ["event_date", "package", "tool"]
+    event_state = forms.ModelChoiceField(queryset=State.objects.none(), label="State", empty_label="Choose a state")
+    field_order = ["event_date", "end_date", "start_time", "package", "venue_name", "event_address",
+                   "event_state", "event_city", "event_pincode", "tool"]
 
     class Meta:
         model = Booking
-        fields = ("event_date", "package", "tool")
-        labels = {"event_date": "Event date", "tool": "Equipment or special requirements"}
+        fields = ("event_date", "end_date", "start_time", "package", "venue_name", "event_address",
+                  "event_state", "event_city", "event_pincode", "tool")
+        labels = {"event_date": "Event date (first day)", "end_date": "Last day (only for a multi-day event)",
+                  "start_time": "Event starts at (optional)", "venue_name": "Venue name (optional)",
+                  "event_address": "Venue address", "event_city": "City", "event_pincode": "Pincode",
+                  "tool": "Equipment or special requirements"}
         widgets = {
             "event_date": forms.DateInput(attrs={"type": "date"}),
+            "end_date": forms.DateInput(attrs={"type": "date"}),
+            "start_time": forms.TimeInput(attrs={"type": "time"}),
+            "venue_name": forms.TextInput(attrs={"placeholder": "e.g. Grand Palace Banquet"}),
+            "event_address": forms.Textarea(attrs={"rows": 2, "placeholder": "Street, area, landmark"}),
+            "event_city": forms.TextInput(attrs={"list": "event-city-options", "placeholder": "City where the event is"}),
+            "event_pincode": forms.TextInput(attrs={"inputmode": "numeric", "maxlength": 6, "placeholder": "6 digits"}),
             "tool": forms.TextInput(attrs={"placeholder": "e.g. drone shots, extra lighting"}),
         }
 
@@ -99,7 +111,13 @@ class BookingForm(BootstrapMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.photographer = photographer
         self.user = user if (user is not None and user.is_authenticated) else None
-        self.fields["event_date"].widget.attrs["min"] = timezone.localdate().isoformat()
+        today = timezone.localdate()
+        self.fields["event_date"].widget.attrs["min"] = today.isoformat()
+        self.fields["end_date"].widget.attrs["min"] = today.isoformat()
+        self.fields["event_state"].queryset = State.objects.order_by("name")
+        # The venue is what the photographer needs to decide whether they can come, so these are not optional.
+        for name in ("event_address", "event_city", "event_pincode"):
+            self.fields[name].required = True
         offered = photographer.active_packages if photographer else []
         if offered:
             self.fields["package"].queryset = Package.objects.filter(pk__in=[p.pk for p in offered])
@@ -108,38 +126,76 @@ class BookingForm(BootstrapMixin, forms.ModelForm):
         else:
             del self.fields["package"]
 
-    def save(self, commit=True):
-        """Copy the chosen package's name and price onto the booking (the snapshot)."""
-        booking = super().save(commit=False)
-        package = self.cleaned_data.get("package")
-        if package:
-            booking.package, booking.package_name, booking.price = package, package.get_tier_display(), package.price
-        else:
-            booking.package, booking.package_name, booking.price = None, "Full day", self.photographer.price_per_day
-        if commit:
-            booking.save()
-        return booking
+    def clean_event_pincode(self):
+        pin = (self.cleaned_data.get("event_pincode") or "").strip()
+        if not (len(pin) == 6 and pin.isdigit() and pin[0] != "0"):
+            raise forms.ValidationError("Enter the 6-digit pincode of the venue.")
+        return pin
+
+    def clean_event_address(self):
+        text = " ".join((self.cleaned_data.get("event_address") or "").split())
+        if len(text) < 8:
+            raise forms.ValidationError("Enter the full venue address so the photographer can find it.")
+        return text
+
+    def clean_event_city(self):
+        return " ".join((self.cleaned_data.get("event_city") or "").split()).title()
 
     def clean_event_date(self):
         date = self.cleaned_data["event_date"]
         if date < timezone.localdate():
             raise forms.ValidationError("Choose a date that is today or later.")
-        # Only an accepted or paid booking blocks a date. Several customers may ask for the same day;
-        # the photographer picks one and the others are declined automatically.
-        clash = Booking.objects.filter(
-            photographer=self.photographer,
-            event_date=date,
-            status__in=["accepted", "confirmed"],
-        ).exists()
-        if clash:
-            raise forms.ValidationError("This photographer is already booked on that date. Try another day.")
-        if BlockedDate.objects.filter(photographer=self.photographer, date=date).exists():
-            raise forms.ValidationError("This photographer is not available on that date. Pick a green day in the calendar.")
-        if self.user is not None and Booking.objects.filter(
-                user=self.user, photographer=self.photographer, event_date=date,
-                status__in=["pending", "accepted", "confirmed"]).exists():
-            raise forms.ValidationError("You have already requested this photographer for that date.")
         return date
+
+    def clean(self):
+        cleaned = super().clean()
+        start, end = cleaned.get("event_date"), cleaned.get("end_date")
+        if not start:
+            return cleaned
+        end = end or start
+        if end < start:
+            self.add_error("end_date", "The last day cannot be before the first day.")
+            return cleaned
+        days = (end - start).days + 1
+        if days > availability.MAX_BOOKING_DAYS:
+            self.add_error("end_date", f"A single booking can cover at most {availability.MAX_BOOKING_DAYS} days.")
+            return cleaned
+        many = days > 1
+        # Only an accepted or paid booking blocks a day. Several customers may ask for the same days;
+        # the photographer picks one and the others are declined automatically.
+        if availability.clashes(self.photographer, start, end).exists():
+            self.add_error("event_date", ("This photographer is already booked on one of those dates. Try other days." if many
+                                          else "This photographer is already booked on that date. Try another day."))
+        elif availability.blocked_days(self.photographer, start, end):
+            self.add_error("event_date", ("This photographer is not available on all of those dates. Pick green days in the calendar." if many
+                                          else "This photographer is not available on that date. Pick a green day in the calendar."))
+        elif self.user is not None and Booking.objects.filter(
+                availability.overlapping(start, end), user=self.user, photographer=self.photographer,
+                status__in=["pending", "accepted", "confirmed"]).exists():
+            self.add_error("event_date", "You have already requested this photographer for "
+                           + ("some of those dates." if many else "that date."))
+        cleaned["end_date"] = end
+        # Can the photographer travel there, and what does it cost? (travel.py is the only place that decides)
+        place = travel.quote(self.photographer, cleaned.get("event_state"), cleaned.get("event_city"), days)
+        if not place.allowed:
+            self.add_error("event_city", place.reason)
+        self.travel = place
+        return cleaned
+
+    def save(self, commit=True):
+        """Copy the chosen package's name and price onto the booking (the snapshot). Price = one day's price x days."""
+        booking = super().save(commit=False)
+        package = self.cleaned_data.get("package")
+        if package:
+            booking.package, booking.package_name, rate = package, package.get_tier_display(), package.price
+        else:
+            booking.package, booking.package_name, rate = None, "Full day", self.photographer.price_per_day
+        booking.day_rate = rate
+        booking.price = rate * ((booking.end_date - booking.event_date).days + 1)
+        booking.travel_fee, booking.travel_zone = self.travel.total, self.travel.zone
+        if commit:
+            booking.save()
+        return booking
 
 
 class PaymentForm(BootstrapMixin, forms.Form):
@@ -220,20 +276,24 @@ class PhotographerProfileForm(BootstrapMixin, forms.ModelForm):
                                 widget=forms.TextInput(attrs={"list": "city-options", "placeholder": "Start typing your city"}))
 
     field_order = ["name", "specialities", "state", "city_name", "experience_years",
-                   "price_per_day", "bio", "image", "is_available"]
+                   "price_per_day", "bio", "tags", "image", "payout_details", "is_available"]
 
     class Meta:
         model = Photographer
-        fields = ("name", "specialities", "experience_years", "price_per_day", "bio", "image", "is_available")
+        fields = ("name", "specialities", "experience_years", "price_per_day", "bio", "tags", "image", "payout_details", "is_available")
         labels = {
+            "payout_details": "Where to send your earnings (UPI ID or bank account)",
             "name": "Name shown to customers",
             "specialities": "Main style",
             "experience_years": "Years of experience",
             "price_per_day": "Price for a full day (INR)",
             "image": "Profile photo",
+            "tags": "Keywords (optional)",
             "is_available": "I am currently taking bookings",
         }
-        widgets = {"bio": forms.Textarea(attrs={"rows": 5, "placeholder": "Tell customers about your style, experience and what a shoot with you is like."})}
+        widgets = {"payout_details": forms.TextInput(attrs={"placeholder": "e.g. yourname@upi, or account number and IFSC", "autocomplete": "off"}),
+                   "bio": forms.Textarea(attrs={"rows": 5, "placeholder": "Tell customers about your style, experience and what a shoot with you is like."}),
+                   "tags": forms.TextInput(attrs={"placeholder": "e.g. outdoor, candid, pre-wedding, drone"})}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -346,13 +406,47 @@ class BlockDatesForm(BootstrapMixin, forms.Form):
             raise forms.ValidationError("The end date cannot be before the start date.")
         if (end - start).days >= self.MAX_DAYS:
             raise forms.ValidationError(f"Block at most {self.MAX_DAYS} days at a time.")
-        taken = list(Booking.objects.filter(photographer=self.photographer, status__in=availability.BLOCKING_STATUSES,
-                                            event_date__range=(start, end)).order_by("event_date").values_list("event_date", flat=True))
+        taken = sorted({d for b in availability.clashes(self.photographer, start, end) for d in b.day_list() if start <= d <= end})
         if taken:
             days = ", ".join(d.strftime("%d %b") for d in taken)
             raise forms.ValidationError(f"You already have a booking on {days}. Cancel it first, or leave those days out.")
         cleaned["end"] = end
         return cleaned
+
+
+class ReportProblemForm(BootstrapMixin, forms.Form):
+    kind = forms.ChoiceField(label="What went wrong?", choices=Booking.DISPUTE_KIND_CHOICES, widget=forms.RadioSelect)
+    text = forms.CharField(label="Tell the admin what happened", min_length=10, max_length=1000,
+                           widget=forms.Textarea(attrs={"rows": 4, "placeholder": "Be specific: the time, what you saw, who you spoke to."}),
+                           error_messages={"min_length": "Please write at least 10 characters so the admin can understand."})
+
+
+class TravelPolicyForm(BootstrapMixin, forms.ModelForm):
+    class Meta:
+        model = Photographer
+        fields = ("travel_scope", "travel_fee_state", "travel_fee_india", "stay_fee_per_day")
+        labels = {"travel_scope": "Where do you take events?",
+                  "travel_fee_state": "Travel charge for another city in your state (INR)",
+                  "travel_fee_india": "Travel charge for another state (INR)",
+                  "stay_fee_per_day": "Stay and food per day away from home (INR)"}
+        help_texts = {"travel_fee_state": "One charge for the whole trip (fuel, train or flight). 0 means no charge.",
+                      "travel_fee_india": "One charge for the whole trip (fuel, train or flight). 0 means no charge.",
+                      "stay_fee_per_day": "Added for every day of an event outside your city. 0 if the customer arranges it."}
+
+    def _check(self, name):
+        v = self.cleaned_data[name]
+        if v > 500000:
+            raise forms.ValidationError("Enter an amount up to 500,000.")
+        return v
+
+    def clean_travel_fee_state(self):
+        return self._check("travel_fee_state")
+
+    def clean_travel_fee_india(self):
+        return self._check("travel_fee_india")
+
+    def clean_stay_fee_per_day(self):
+        return self._check("stay_fee_per_day")
 
 
 class PackageForm(BootstrapMixin, forms.ModelForm):

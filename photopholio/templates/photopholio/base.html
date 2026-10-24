@@ -34,6 +34,8 @@
             <li><a class="dropdown-item" href="{% url 'pro_portfolio' %}">My portfolio</a></li>
             <li><a class="dropdown-item" href="{% url 'pro_availability' %}">Availability</a></li>
             <li><a class="dropdown-item" href="{% url 'pro_packages' %}">Packages</a></li>
+            <li><a class="dropdown-item" href="{% url 'pro_travel' %}">Travel charges</a></li>
+            <li><a class="dropdown-item" href="{% url 'pro_earnings' %}">Earnings</a></li>
             <li><a class="dropdown-item" href="{% url 'pro_reviews' %}">Reviews</a></li>
             {% if user.photographer_profile and user.photographer_profile.status == 'approved' %}<li><a class="dropdown-item" href="{% url 'photographer_detail' user.photographer_profile.slug %}">View my public page</a></li>{% endif %}
             {% else %}

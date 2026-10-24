@@ -28,6 +28,7 @@
 
       <h2 class="mt-5 mb-2" style="font-size:1.8rem">About {{ p.name.split.0 }}</h2>
       <p class="measure">{{ p.bio }}</p>
+      {% if p.tag_list %}<div class="d-flex flex-wrap gap-2 mb-1">{% for t in p.tag_list %}<span class="chip chip-sm">{{ t }}</span>{% endfor %}</div>{% endif %}
 
       {% if packages %}
       <h2 class="mt-5 mb-3" style="font-size:1.8rem" id="packages">Packages</h2>
@@ -43,6 +44,10 @@
         {% endfor %}
       </div>
       {% endif %}
+
+      <h2 class="mt-5 mb-2" style="font-size:1.8rem" id="travel">Travel</h2>
+      <ul class="measure mb-0 ps-3">{% for line in travel_lines %}<li>{{ line }}</li>{% endfor %}</ul>
+      <p class="small muted mt-2">Travel is paid by the customer and shown in the price before you send a request.</p>
 
       <h2 class="mt-5 mb-2" style="font-size:1.8rem" id="availability">Availability</h2>
       <p class="muted small mb-3">Green days are free.{% if can_book %} Click one to fill in your booking date.{% endif %}</p>
@@ -94,6 +99,13 @@
               {% for e in f.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}</div>
             {% endif %}
           {% endfor %}
+          <div class="price-box" id="priceBox" data-url="{% url 'booking_quote' p.slug %}" aria-live="polite">
+            <div id="priceLines" class="small"></div>
+            <div class="d-flex justify-content-between align-items-baseline border-top pt-2 mt-2"><strong>Total</strong><strong class="fs-5" id="priceTotal"></strong></div>
+            <div class="small text-danger mt-1" id="priceError"></div>
+          </div>
+          <datalist id="event-city-options">{% for c in event_city_options %}<option value="{{ c }}">{% endfor %}</datalist>
+          <p class="small muted">Events within India only. For several days, set a last day: the price is one day's price &times; the number of days.</p>
           <button class="btn btn-primary w-100 py-2" type="submit">{% if user.is_authenticated %}Send booking request{% else %}Log in to book{% endif %}</button>
           <p class="small muted mt-2 mb-0">You pay only after {{ p.name.split.0 }} accepts. <a href="{% url 'cancellation_policy' %}">Cancellation policy</a></p>
         </form>
@@ -122,11 +134,44 @@ document.querySelectorAll('[data-package]').forEach(function (button) {
     if (card) { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
   });
 });
+(function () {
+  var first = document.getElementById('id_event_date'), last = document.getElementById('id_end_date');
+  if (first && last) { first.addEventListener('change', function () { last.min = first.value || last.min; }); }
+})();
+(function () {
+  var box = document.getElementById('priceBox');
+  if (!box) { return; }
+  var timer = null;
+  function money(n) { return '\u20B9' + Number(n).toLocaleString('en-IN'); }
+  function val(id) { var el = document.getElementById(id); return el ? el.value : ''; }
+  function packageId() { var r = document.querySelector('input[name="package"]:checked'); return r ? r.value : ''; }
+  function refresh() {
+    var q = new URLSearchParams({date: val('id_event_date'), end_date: val('id_end_date'), package: packageId(), state: val('id_event_state'), city: val('id_event_city')});
+    fetch(box.getAttribute('data-url') + '?' + q.toString()).then(function (r) { return r.json(); }).then(function (d) {
+      var html = '';
+      d.lines.forEach(function (l) { html += '<div class="d-flex justify-content-between"><span>' + l.label.replace(/[<>&]/g, '') + '</span><span>' + money(l.amount) + '</span></div>'; });
+      if (!d.has_place) { html += '<div class="muted">Add the venue city and state to see travel charges.</div>'; }
+      document.getElementById('priceLines').innerHTML = html;
+      document.getElementById('priceTotal').textContent = money(d.total);
+      document.getElementById('priceError').textContent = d.allowed ? '' : d.reason;
+    }).catch(function () {});
+  }
+  function later() { clearTimeout(timer); timer = setTimeout(refresh, 250); }
+  ['id_event_date', 'id_end_date', 'id_event_state', 'id_event_city'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) { el.addEventListener('change', later); el.addEventListener('input', later); }
+  });
+  document.querySelectorAll('input[name="package"]').forEach(function (r) { r.addEventListener('change', later); });
+  document.addEventListener('click', function (e) { if (e.target.closest('[data-package], .cal-day.free')) { setTimeout(refresh, 50); } });
+  refresh();
+})();
 document.querySelectorAll('.cal-day.free[data-date]').forEach(function (day) {
   day.addEventListener('click', function () {
     var input = document.getElementById('id_event_date');
     if (!input) { return; }
     input.value = day.getAttribute('data-date');
+    var last = document.getElementById('id_end_date');
+    if (last) { last.min = input.value; if (last.value && last.value < input.value) { last.value = ''; } }
     document.querySelectorAll('.cal-day.picked').forEach(function (d) { d.classList.remove('picked'); });
     day.classList.add('picked');
     var card = document.getElementById('book');

@@ -5,7 +5,7 @@
   <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-4">Cancel this booking?</h1>
   <div class="panel">
     <h3 class="mb-0">{{ booking.photographer.name }}</h3>
-    <p class="muted">{{ booking.event_date|date:"l, j F Y" }} in {{ booking.photographer.city.name }}</p>
+    <p class="muted">{% if booking.is_multi_day %}{{ booking.date_label }} ({{ booking.days }} days){% else %}{{ booking.event_date|date:"l, j F Y" }}{% endif %} in {{ booking.photographer.city.name }}</p>
     {% if paid %}
       <div class="border-top pt-3 mb-3">
         <div class="d-flex justify-content-between"><span>You paid</span><strong>&#8377;{{ paid.amount }}</strong></div>

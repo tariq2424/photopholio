@@ -4,7 +4,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.views import LoginView
-from django.http import Http404
+from django.http import Http404, JsonResponse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.urls import reverse
 from django.utils import timezone
@@ -16,13 +16,13 @@ from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from . import availability, booking_flow, emails, favourites, policy, reviews
+from . import availability, booking_flow, emails, favourites, money, policy, reviews, tracking, travel
 from .booking_flow import FlowError
 from .forms import (BlockDatesForm, BookingForm, CancelReasonForm, PackageForm, ContactForm, FeedbackForm, PaymentForm,
                     PhotoUploadForm, PhotographerProfileForm, PortfolioForm, RescheduleForm, ReplyForm,
-                    ProfileForm, RegisterForm, SmartLoginForm)
+                    ProfileForm, RegisterForm, ReportProblemForm, SmartLoginForm, TravelPolicyForm)
 from .models import (BlockedDate, Booking, City, Feedback, Package, Payment, Photo, Photographer,
-                     Portfolio, RescheduleRequest, UserProfile)
+                     Portfolio, RescheduleRequest, State, UserProfile)
 from .roles import get_role, photographer_required
 
 
@@ -149,15 +149,39 @@ def photographer_detail(request, slug):
         "packages": photographer.active_packages,
         "is_owner": is_owner,
         "can_book": can_book,
+        "travel_lines": travel.policy_lines(photographer),
+        "event_city_options": City.objects.values_list("name", flat=True).distinct().order_by("name"),
         "role": role,
     }
     return render(request, "photopholio/photographer_detail.html", context)
 
 
+def booking_quote(request, slug):
+    """JSON for the live price box on the booking form: the same numbers the booking will be charged."""
+    photographer = get_object_or_404(Photographer.objects.select_related("city__state"), slug=slug, status="approved")
+    start, end = _parse_day(request.GET.get("date")), _parse_day(request.GET.get("end_date"))
+    days = 1
+    if start and end and end >= start:
+        days = min((end - start).days + 1, availability.MAX_BOOKING_DAYS)
+    package = None
+    if request.GET.get("package", "").isdigit():
+        package = next((p for p in photographer.active_packages if p.pk == int(request.GET["package"])), None)
+    elif photographer.active_packages:
+        offered = photographer.active_packages
+        package = next((p for p in offered if p.tier == "standard"), offered[0])
+    state = State.objects.filter(pk=request.GET["state"]).first() if request.GET.get("state", "").isdigit() else None
+    result = travel.summary(photographer, package, days, state, request.GET.get("city", ""))
+    return JsonResponse({
+        "lines": [{"label": label, "amount": amount} for label, amount in result["lines"]],
+        "total": result["total"], "allowed": result["allowed"], "reason": result["reason"],
+        "has_place": bool(state and request.GET.get("city", "").strip()), "days": days})
+
+
 def cancellation_policy(request):
     return render(request, "photopholio/policy.html", {
         "rows": policy.rows(), "window": policy.PAYMENT_WINDOW_HOURS,
-        "resched_days": policy.RESCHEDULE_MIN_DAYS, "resched_max": policy.MAX_RESCHEDULES})
+        "resched_days": policy.RESCHEDULE_MIN_DAYS, "resched_max": policy.MAX_RESCHEDULES,
+        "commission": money.default_percent()})
 
 
 def register(request):
@@ -168,12 +192,15 @@ def register(request):
     form = RegisterForm(request.POST or None, initial=initial)
     if request.method == "POST" and form.is_valid():
         user = form.save()
-        login(request, user)
+        # Like most real sites: creating an account does not log you in. You are sent to the login page
+        # (with your username already filled in), and after logging in you land on your own dashboard.
+        # Only the username is remembered, and only for the next login page: never the password.
+        request.session["just_registered"] = user.username
         if form.cleaned_data["role"] == "photographer":
-            messages.success(request, f"Welcome, {user.first_name}! Let's set up your photographer profile.")
-            return redirect("pro_profile")
-        messages.success(request, f"Welcome, {user.first_name}! Your account is ready.")
-        return redirect("profile")
+            messages.success(request, f"Welcome, {user.first_name}! Your photographer account is created. Please log in to set up your profile.")
+            return redirect("pro_login")
+        messages.success(request, f"Welcome, {user.first_name}! Your account is created. Please log in to continue.")
+        return redirect("login")
     return render(request, "photopholio/register.html", {"form": form})
 
 
@@ -197,7 +224,7 @@ def my_bookings(request):
     booking_flow.expire_stale()
     today = timezone.localdate()
     bookings = list(Booking.objects.filter(user=request.user)
-                    .select_related("photographer__city").prefetch_related("payments", "feedbacks", "reschedules"))
+                    .select_related("photographer__city").prefetch_related("payments", "feedbacks", "reschedules", "shoot_days"))
     by_status = lambda *s: [b for b in bookings if b.status in s]
     upcoming = sorted(by_status("confirmed"), key=lambda b: b.event_date)
     payments = list(Payment.objects.filter(user=request.user, status="completed")
@@ -209,7 +236,7 @@ def my_bookings(request):
         "upcoming": upcoming,
         "waiting": sorted(by_status("pending"), key=lambda b: b.event_date),
         "past": by_status("completed", "cancelled", "declined"),
-        "next_shoot": next((b for b in upcoming if b.event_date >= today), None),
+        "next_shoot": next((b for b in upcoming if b.last_date >= today), None),
         "payments": payments,
         "spent": sum(p.amount for p in payments) - refunded,
         "refund_waiting": refund_waiting,
@@ -283,7 +310,7 @@ def booking_reschedule(request, pk):
     if request.method == "POST" and form.is_valid():
         try:
             booking_flow.request_reschedule(booking, form.cleaned_data["new_date"], form.cleaned_data["reason"])
-            messages.success(request, f"Request sent. Your booking stays on {booking.event_date:%d %b %Y} until {booking.photographer.name} accepts.")
+            messages.success(request, f"Request sent. Your booking stays on {booking.date_label} until {booking.photographer.name} accepts.")
             return redirect("my_bookings")
         except FlowError as e:
             form.add_error(None, str(e))
@@ -326,6 +353,7 @@ def payment(request, pk):
         )
         booking.status = "confirmed"
         booking.save(update_fields=["status"])
+        money.on_paid(booking)  # work out the commission and start holding the money
         emails.payment_received(booking, paid)
         messages.success(request, "Payment received. Your booking is confirmed.")
         return redirect("my_bookings")
@@ -365,16 +393,32 @@ def contact(request):
 class SmartLoginView(LoginView):
     """
     The only login view. Customers and photographers sign in here (also reachable at /photographer/login/).
-    Photographers land on their dashboard, everyone else on the home page, unless a ?next= page was requested.
+    Everyone lands on their own dashboard (photographers: Dashboard, customers: My bookings),
+    unless a ?next= page was requested. Right after creating an account the username is already filled in.
     """
     template_name = "photopholio/login.html"
     authentication_form = SmartLoginForm
     redirect_authenticated_user = True
 
+    def get_initial(self):
+        initial = super().get_initial()
+        if self.request.method == "GET":
+            username = self.request.session.pop("just_registered", "")
+            if username:
+                initial["username"] = username
+        return initial
+
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        if form.initial.get("username") and not form.is_bound:
+            form.fields["username"].widget.attrs.pop("autofocus", None)
+            form.fields["password"].widget.attrs["autofocus"] = True  # the next thing to type is the password
+        return form
+
     def get_default_redirect_url(self):
         if get_role(self.request.user) == "photographer":
             return reverse("pro_dashboard")
-        return super().get_default_redirect_url()
+        return reverse("my_bookings")
 
 
 def _own_profile(request):
@@ -388,15 +432,15 @@ def pro_dashboard(request):
     if ph:
         booking_flow.expire_stale()
         today = timezone.localdate()
-        bookings = Booking.objects.filter(photographer=ph).select_related("user").prefetch_related("payments")
+        bookings = Booking.objects.filter(photographer=ph).select_related("user").prefetch_related("payments", "shoot_days")
         context.update({
             "checklist": ph.checklist(),
             "ready": ph.ready_for_review,
             "photo_count": ph.published_photo_count(),
             "requests": bookings.filter(status="pending").order_by("event_date"),
             "awaiting_payment": bookings.filter(status="accepted").order_by("event_date"),
-            "to_complete": bookings.filter(status="confirmed", event_date__lte=today).order_by("event_date"),
-            "upcoming": bookings.filter(status="confirmed", event_date__gt=today).order_by("event_date"),
+            "to_complete": bookings.filter(status="confirmed", end_date__lte=today).order_by("event_date"),
+            "upcoming": bookings.filter(status="confirmed", end_date__gt=today).order_by("event_date"),
             "reschedule_requests": RescheduleRequest.objects.filter(booking__photographer=ph, status="pending")
                                    .select_related("booking__user").order_by("new_date"),
             "history": bookings.filter(status__in=["completed", "cancelled", "declined"]).order_by("-event_date")[:15],
@@ -511,18 +555,82 @@ def pro_booking_action(request, pk, action):
                                 pk=pk, photographer__user=request.user)
     booking_flow.expire_stale()
     booking.refresh_from_db()
-    handlers = {"accept": booking_flow.accept, "decline": booking_flow.decline, "complete": booking_flow.mark_completed}
+    handlers = {"accept": booking_flow.accept, "decline": booking_flow.decline,
+                "complete": lambda b: booking_flow.mark_completed(b, actor=request.user)}
     if action not in handlers:
         raise Http404("Unknown action")
     done = {"accept": f"Accepted. {booking.user.first_name or booking.user.username} has {policy.PAYMENT_WINDOW_HOURS} hours to pay.",
             "decline": "Request declined.",
-            "complete": "Marked as completed. The customer can now leave a review."}
+            "complete": "Marked as completed. The customer will be asked to confirm, and your payout is released after that."}
     try:
         handlers[action](booking)
         messages.success(request, done[action])
     except FlowError as e:
         messages.error(request, str(e))
     return redirect("pro_dashboard")
+
+
+@photographer_required
+@require_POST
+def pro_shoot_action(request, pk, step):
+    """Arrived / Start / Finish for today. All the rules are in tracking.py."""
+    if step not in tracking.STEPS:
+        raise Http404("Unknown action")
+    get_object_or_404(Booking, pk=pk, photographer__user=request.user)
+    done = {"arrived": "Marked as arrived. The customer has been told.", "start": "Shoot started.",
+            "finish": "Today's shoot is finished."}
+    try:
+        tracking.photographer_step(pk, request.user, step)
+        messages.success(request, done[step])
+    except FlowError as e:
+        messages.error(request, str(e))
+    return redirect("pro_dashboard")
+
+
+@login_required
+@require_POST
+def booking_arrival_seen(request, pk, day):
+    booking = get_object_or_404(Booking, pk=pk, user=request.user)
+    when = _parse_day(day)
+    try:
+        if when is None:
+            raise FlowError("That is not a valid day.")
+        tracking.confirm_arrival(booking.pk, request.user, when)
+        messages.success(request, "Thanks. Your confirmation is saved.")
+    except FlowError as e:
+        messages.error(request, str(e))
+    return redirect("my_bookings")
+
+
+@login_required
+@require_POST
+def booking_confirm_done(request, pk):
+    booking = get_object_or_404(Booking, pk=pk, user=request.user)
+    try:
+        tracking.confirm_completed(booking.pk, request.user)
+        messages.success(request, f"Thanks! You confirmed the shoot. {booking.photographer.name} will be paid.")
+    except FlowError as e:
+        messages.error(request, str(e))
+    return redirect("my_bookings")
+
+
+@login_required
+def booking_report(request, pk):
+    booking = get_object_or_404(Booking.objects.select_related("photographer"), pk=pk, user=request.user)
+    booking_flow.expire_stale()
+    booking.refresh_from_db()
+    form = ReportProblemForm(request.POST or None)
+    if request.method == "GET" and not booking.can_report():
+        messages.error(request, "A problem can be reported from the first day of the event, until the photographer has been paid.")
+        return redirect("my_bookings")
+    if request.method == "POST" and form.is_valid():
+        try:
+            tracking.report_problem(booking.pk, request.user, form.cleaned_data["kind"], form.cleaned_data["text"])
+            messages.success(request, "Your report was sent to the admin. Nobody is blamed yet: both sides will be heard, and you will get an email with the decision.")
+            return redirect("my_bookings")
+        except FlowError as e:
+            form.add_error(None, str(e))
+    return render(request, "photopholio/report_problem.html", {"booking": booking, "form": form})
 
 
 @photographer_required
@@ -627,6 +735,34 @@ def pro_unblock(request, pk):
     block.delete()
     messages.info(request, "Day is open for bookings again.")
     return redirect("pro_availability")
+
+
+@photographer_required
+def pro_earnings(request):
+    ph = _own_profile(request)
+    if ph is None:
+        messages.info(request, "Create your profile first.")
+        return redirect("pro_profile")
+    rows = list(Booking.objects.filter(photographer=ph).exclude(payout_status="").select_related("user").order_by("-event_date"))
+    totals = money.totals(Booking.objects.filter(photographer=ph))
+    upcoming = list(Booking.objects.filter(photographer=ph, status__in=["pending", "accepted"]).select_related("user").order_by("event_date"))
+    return render(request, "photopholio/pro_earnings.html", {
+        "ph": ph, "rows": rows, "totals": totals, "upcoming": upcoming,
+        "percent": money.percent_for(ph), "missing_payout": not ph.payout_details})
+
+
+@photographer_required
+def pro_travel(request):
+    ph = _own_profile(request)
+    if ph is None:
+        messages.info(request, "Create your profile first.")
+        return redirect("pro_profile")
+    form = TravelPolicyForm(request.POST or None, instance=ph)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Travel policy saved. New booking requests will use it; existing bookings keep their price.")
+        return redirect("pro_travel")
+    return render(request, "photopholio/pro_travel.html", {"ph": ph, "form": form, "preview": travel.policy_lines(ph)})
 
 
 @photographer_required

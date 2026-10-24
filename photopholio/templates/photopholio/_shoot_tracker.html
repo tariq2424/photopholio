@@ -1,0 +1,25 @@
+{# Shoot progress per day. role = "pro" (photographer) or "customer". Needs b = the booking. #}
+{% if b.status == 'confirmed' or b.status == 'completed' %}
+<div class="tracker" aria-label="Shoot progress">
+  {% for d in b.day_states %}
+  <div class="tracker-row">
+    <span class="tracker-date">{{ d.date|date:"D j M" }}</span>
+    <span class="tracker-state tracker-{{ d.state }}">{% if d.state == 'upcoming' %}Upcoming{% elif d.state == 'arrived' %}Arrived{% elif d.state == 'in_progress' %}In progress{% else %}Finished{% endif %}</span>
+    <span class="small muted">
+      {% if d.arrived_at %}Arrived {{ d.arrived_at|date:"g:i a" }}{% endif %}{% if d.started_at %} &middot; Started {{ d.started_at|date:"g:i a" }}{% endif %}{% if d.finished_at %} &middot; Finished {{ d.finished_at|date:"g:i a" }}{% endif %}
+      {% if d.seen %} &middot; customer confirmed arrival{% endif %}
+    </span>
+    {% if role == 'customer' and d.arrived_at and not d.seen and b.status == 'confirmed' %}
+      <form method="post" action="{% url 'booking_arrival_seen' b.pk d.date|date:'Y-m-d' %}" class="d-inline">{% csrf_token %}<button class="btn btn-link btn-sm p-0" type="submit">Yes, they are here</button></form>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% if role == 'pro' and b.status == 'confirmed' %}
+    {% with step=b.todays_step %}{% if step %}
+    <form method="post" action="{% url 'pro_shoot' b.pk step %}" class="mt-2">{% csrf_token %}
+      <button class="btn btn-primary btn-sm" type="submit">{% if step == 'arrived' %}I've arrived{% elif step == 'start' %}Start shoot{% else %}Finish today's shoot{% endif %}</button>
+    </form>
+    {% endif %}{% endwith %}
+  {% endif %}
+</div>
+{% endif %}

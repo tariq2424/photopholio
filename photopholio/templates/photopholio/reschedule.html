@@ -5,8 +5,8 @@
   <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-4">Change your date</h1>
   <div class="panel mb-4">
     <h3 class="mb-0">{{ booking.photographer.name }}</h3>
-    <p class="muted mb-2">Currently booked for {{ booking.event_date|date:"l, j F Y" }}</p>
-    <p class="small muted mb-3">Pick a new day and we'll ask {{ booking.photographer.name.split.0 }}. Your price and payment don't change, and you keep the old date until they say yes.
+    <p class="muted mb-2">Currently booked for {% if booking.is_multi_day %}{{ booking.date_label }} ({{ booking.days }} days){% else %}{{ booking.event_date|date:"l, j F Y" }}{% endif %}</p>
+    <p class="small muted mb-3">Pick a new {% if booking.is_multi_day %}first day (the booking keeps its {{ booking.days }} days){% else %}day{% endif %} and we'll ask {{ booking.photographer.name.split.0 }}. Your price and payment don't change, and you keep the old date until they say yes.
       You can move a booking <strong>once</strong>, and only while the shoot is at least {{ min_days }} days away.</p>
     <form method="post" novalidate>{% csrf_token %}
       {% for e in form.non_field_errors %}<div class="alert alert-danger py-2 small">{{ e }}</div>{% endfor %}

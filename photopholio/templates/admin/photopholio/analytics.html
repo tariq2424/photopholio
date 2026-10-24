@@ -16,6 +16,23 @@
     <div class="small text-muted">of paid bookings</div></div></div></div>
 </div>
 
+{% with m=data.money e=data.events %}
+<div class="row">
+  <div class="col-6 col-lg-3 mb-3"><div class="card h-100 border-success"><div class="card-body">
+    <div class="text-muted small">PhotoPholio commission earned</div><div class="h3 mb-0">&#8377;{{ m.commission_earned }}</div>
+    <div class="small text-muted">&#8377;{{ m.commission_pending }} more when held shoots are done</div></div></div></div>
+  <div class="col-6 col-lg-3 mb-3"><div class="card h-100"><div class="card-body">
+    <div class="text-muted small">Held for photographers</div><div class="h3 mb-0">&#8377;{{ m.held }}</div>
+    <div class="small text-muted">{{ m.held_n }} paid booking{{ m.held_n|pluralize }}, shoot not done</div></div></div></div>
+  <div class="col-6 col-lg-3 mb-3"><div class="card h-100 {% if m.ready_n %}border-warning{% endif %}"><div class="card-body">
+    <div class="text-muted small">To pay out now</div><div class="h3 mb-0">&#8377;{{ m.ready }}</div>
+    <div class="small"><a href="{% url 'admin:photopholio_payouts' %}">{{ m.ready_n }} payout{{ m.ready_n|pluralize }} ready</a></div></div></div></div>
+  <div class="col-6 col-lg-3 mb-3"><div class="card h-100"><div class="card-body">
+    <div class="text-muted small">Paid out so far</div><div class="h3 mb-0">&#8377;{{ m.paid_out }}</div>
+    <div class="small text-muted">{{ m.paid_n }} payout{{ m.paid_n|pluralize }}{% if m.recover_n %} &middot; <span class="text-danger">{{ m.recover_n }} to recover</span>{% endif %}</div></div></div></div>
+</div>
+{% endwith %}
+
 <div class="row">
   <div class="col-lg-6 mb-3"><div class="card h-100 {% if k.pending_approvals %}border-warning{% endif %}"><div class="card-header"><strong>Waiting for your approval ({{ k.pending_approvals }})</strong></div>
     <div class="card-body p-0">{% if data.pending_approvals %}<table class="table table-sm mb-0"><tbody>
@@ -39,6 +56,21 @@
 </div>
 
 <div class="row">
+  <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header"><strong>Where the money goes</strong></div><div class="card-body">
+    <p class="mb-1">Customer pays the photographer's price <strong>plus travel</strong>. No extra fee for the customer.</p>
+    <p class="mb-1">PhotoPholio keeps <strong>{{ data.money.percent }}%</strong> of the <em>service price</em> as commission (a photographer can have their own percent).</p>
+    <p class="mb-1">The rest, with all travel and stay money, is the photographer's. It is <strong>held</strong> until the shoot is completed, then <strong>ready</strong> for you to pay.</p>
+    <p class="mb-0 small text-muted">Travel and stay collected so far: <strong>&#8377;{{ data.money.travel_collected }}</strong> (passed on to photographers, no commission).</p></div></div></div>
+  <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header"><strong>What customers book</strong></div><div class="card-body">
+    <p class="mb-1">Average booking length: <strong>{{ data.events.avg_days }} day{{ data.events.avg_days|pluralize }}</strong>
+      &middot; multi-day: <strong>{% if data.events.multi_day_pct is None %}n/a{% else %}{{ data.events.multi_day_pct }}%{% endif %}</strong></p>
+    <p class="mb-2">Events outside the photographer's city: <strong>{% if data.events.outstation_pct is None %}n/a{% else %}{{ data.events.outstation_pct }}%{% endif %}</strong></p>
+    {% if data.events.top_cities %}<div class="small text-muted mb-1">Most requested event cities</div>
+    <table class="table table-sm mb-0"><tbody>{% for c in data.events.top_cities %}<tr><td>{{ c.event_city }}</td><td class="text-right">{{ c.n }}</td></tr>{% endfor %}</tbody></table>
+    {% else %}<p class="mb-0 text-muted">No event cities yet.</p>{% endif %}</div></div></div>
+</div>
+
+<div class="row">
   <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header"><strong>Marketplace health</strong></div><div class="card-body">
     <p class="mb-1">Photographers accept <strong>{% if k.acceptance_rate is None %}n/a{% else %}{{ k.acceptance_rate }}%{% endif %}</strong> of the requests they answer.</p>
     <p class="mb-1"><strong>{% if k.payment_rate is None %}n/a{% else %}{{ k.payment_rate }}%{% endif %}</strong> of accepted bookings get paid.</p>
@@ -48,7 +80,7 @@
     {% else %}<p class="p-3 mb-0 text-muted">No photographer has cancelled a booking.</p>{% endif %}</div></div></div>
 </div>
 {% endwith %}
-<p class="small text-muted">Net revenue = completed payments minus refunds (pending or processed). Acceptance rate counts requests the photographer answered; automatic declines when a date is taken are not counted.</p>
+<p class="small text-muted">Commission earned = commission on payouts that are ready or paid; held payouts are not counted yet. This is a ledger: no real money moves in this demo. Net revenue = completed payments minus refunds (pending or processed). Acceptance rate counts requests the photographer answered; automatic declines when a date is taken are not counted.</p>
 
 {{ data.chart|json_script:"chart-data" }}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
@@ -60,7 +92,8 @@
   var noLegend = { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } };
   new Chart('c-requests', { type: 'bar', data: { labels: d.months, datasets: [{ data: d.requests, backgroundColor: navy }] }, options: noLegend });
   new Chart('c-money', { type: 'bar', data: { labels: d.months, datasets: [
-      { label: 'Paid', data: d.gross, backgroundColor: green }, { label: 'Refunds', data: d.refunds, backgroundColor: red }] },
+      { label: 'Paid', data: d.gross, backgroundColor: green }, { label: 'Refunds', data: d.refunds, backgroundColor: red },
+      { label: 'PhotoPholio commission', data: d.commission, backgroundColor: navy }] },
     options: { scales: { y: { beginAtZero: true } } } });
   new Chart('c-status', { type: 'doughnut', data: { labels: d.status_labels, datasets: [{ data: d.status_values,
       backgroundColor: [amber, '#0ea5e9', navy, green, grey, red] }] }, options: { plugins: { legend: { position: 'bottom' } } } });

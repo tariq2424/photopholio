@@ -6,12 +6,14 @@ Definitions (shown at the bottom of the page too):
   refunds    = refund amounts, pending or processed
   net        = gross - refunds
   acceptance = of the requests a photographer answered, the share they accepted
+  commission = PhotoPholio's share (see money.py): earned once a payout is ready or paid, pending while the money is held
 """
 from django.contrib.auth.models import User
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, F, Q, Sum
 from django.db.models.functions import TruncMonth
 from django.utils import timezone
 
+from . import money
 from .models import Booking, Payment, Photographer
 
 MONTHS = 6
@@ -45,11 +47,14 @@ def dashboard_data(today=None, months=MONTHS):
     since = timezone.make_aware(timezone.datetime(keys[0][0], keys[0][1], 1))
     requests = Booking.objects.filter(created_at__gte=since).annotate(m=TruncMonth("created_at")) \
         .values("m").annotate(n=Count("id"))
-    money = Payment.objects.filter(status="completed", payment_date__gte=since).annotate(m=TruncMonth("payment_date")) \
+    money_rows = Payment.objects.filter(status="completed", payment_date__gte=since).annotate(m=TruncMonth("payment_date")) \
         .values("m").annotate(gross=Sum("amount"), refunds=Sum("refund_amount"))
 
-    gross_by_month = _series(money, keys, "gross")
-    refunds_by_month = _series(money, keys, "refunds")
+    gross_by_month = _series(money_rows, keys, "gross")
+    refunds_by_month = _series(money_rows, keys, "refunds")
+    fee_rows = Payment.objects.filter(status="completed", payment_date__gte=since).annotate(m=TruncMonth("payment_date")) \
+        .values("m").annotate(fee=Sum("booking__platform_fee"))
+    commission_by_month = _series(fee_rows, keys, "fee")
 
     paid = Payment.objects.filter(status="completed")
     totals = paid.aggregate(gross=Sum("amount"), refunds=Sum("refund_amount"), n=Count("id"))
@@ -70,7 +75,33 @@ def dashboard_data(today=None, months=MONTHS):
     cancellers = list(Photographer.objects.annotate(c=Count("bookings", filter=Q(bookings__cancelled_by="photographer")))
                       .filter(c__gt=0).order_by("-c", "name")[:5])
 
+    ledger = money.totals(Booking.objects.all())
+    z = lambda key, field: ledger.get(key, {}).get(field, 0)
+    in_money = Booking.objects.exclude(payout_status="").exclude(payout_status="void")
+    paid_n = in_money.count()
+    multi = in_money.filter(end_date__gt=F("event_date")).count()
+    outstation = in_money.filter(travel_zone__in=["state", "india"]).count()
+    day_rows = list(in_money.values_list("event_date", "end_date"))
+    avg_days = round(sum(((e or d) - d).days + 1 for d, e in day_rows) / len(day_rows), 1) if day_rows else 0
+    top_cities = list(Booking.objects.exclude(event_city="").values("event_city").annotate(n=Count("id")).order_by("-n", "event_city")[:5])
+    to_recover = list(Booking.objects.filter(payout_status="recover").select_related("photographer"))
+
     return {
+        "money": {
+            "commission_earned": z("ready", "fee") + z("paid", "fee"),
+            "commission_pending": z("held", "fee"),
+            "held": z("held", "money"), "held_n": z("held", "n"),
+            "ready": z("ready", "money"), "ready_n": z("ready", "n"),
+            "paid_out": z("paid", "money"), "paid_n": z("paid", "n"),
+            "recover_n": len(to_recover),
+            "travel_collected": in_money.aggregate(t=Sum("travel_fee"))["t"] or 0,
+            "percent": money.default_percent(),
+        },
+        "events": {
+            "paid_bookings": paid_n, "avg_days": avg_days, "multi_day": multi,
+            "multi_day_pct": _pct(multi, paid_n), "outstation": outstation, "outstation_pct": _pct(outstation, paid_n),
+            "top_cities": top_cities,
+        },
         "kpis": {
             "total_bookings": total_bookings,
             "requests_this_month": sum(1 for _ in Booking.objects.filter(created_at__year=today.year, created_at__month=today.month)),
@@ -94,6 +125,7 @@ def dashboard_data(today=None, months=MONTHS):
             "requests": _series(requests, keys, "n"),
             "gross": gross_by_month,
             "refunds": refunds_by_month,
+            "commission": commission_by_month,
             "status_labels": [status_labels[s] for s in status_labels if status_counts.get(s)],
             "status_values": [status_counts[s] for s in status_labels if status_counts.get(s)],
             "top_names": [t["booking__photographer__name"] for t in top],

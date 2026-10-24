@@ -1,0 +1,21 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}Report a problem{% endblock %}
+{% block content %}
+<div class="container section" style="max-width:640px">
+  <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-1">Report a problem</h1>
+  <p class="muted mb-4">{{ booking.photographer.name }}, {{ booking.date_label }}. The admin reads your report and also hears {{ booking.photographer.name.split.0 }}.
+    <strong>Nobody is blamed and nothing is refunded automatically.</strong> Until the admin decides, the photographer's payout is on hold.</p>
+  <div class="panel">
+    <form method="post" novalidate>{% csrf_token %}
+      {% for e in form.non_field_errors %}<div class="alert alert-danger">{{ e }}</div>{% endfor %}
+      <div class="mb-3"><span class="form-label d-block">{{ form.kind.label }}</span>
+        {% for radio in form.kind %}<label class="pkg-option d-block mb-2" for="{{ radio.id_for_label }}">{{ radio.tag }}<span>{{ radio.choice_label }}</span></label>{% endfor %}
+        {% for e in form.kind.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}</div>
+      <div class="mb-3"><label class="form-label" for="{{ form.text.id_for_label }}">{{ form.text.label }}</label>{{ form.text }}
+        {% for e in form.text.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}</div>
+      <button class="btn btn-danger" type="submit">Send report to the admin</button>
+      <a class="btn btn-link" href="{% url 'my_bookings' %}">Cancel</a>
+    </form>
+  </div>
+</div>
+{% endblock %}

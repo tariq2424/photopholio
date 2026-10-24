@@ -20,6 +20,8 @@
         <a class="btn btn-outline-dark btn-sm" href="{% url 'pro_portfolio' %}">Manage portfolio</a>
         <a class="btn btn-outline-dark btn-sm" href="{% url 'pro_availability' %}">Availability</a>
         <a class="btn btn-outline-dark btn-sm" href="{% url 'pro_packages' %}">Packages</a>
+        <a class="btn btn-outline-dark btn-sm" href="{% url 'pro_travel' %}">Travel</a>
+        <a class="btn btn-outline-dark btn-sm" href="{% url 'pro_earnings' %}">Earnings</a>
         <a class="btn btn-outline-dark btn-sm" href="{% url 'photographer_detail' ph.slug %}">{% if ph.status == 'approved' %}View public page{% else %}Preview as customer{% endif %}</a>
       </div>
     </div>
@@ -56,7 +58,7 @@
       <div class="date-badge"><b>{{ r.new_date|date:"j" }}</b><span>{{ r.new_date|date:"M Y" }}</span></div>
       <div class="grow">
         <h3 class="mb-0">{{ r.booking.user.first_name|default:r.booking.user.username }}</h3>
-        <span class="muted small">Wants to move from {{ r.old_date|date:"j M Y" }} to {{ r.new_date|date:"j M Y" }}{% if r.reason %} &middot; {{ r.reason }}{% endif %}</span>
+        <span class="muted small">Wants to move from {{ r.booking.date_label }} to {{ r.new_label }}{% if r.reason %} &middot; {{ r.reason }}{% endif %}</span>
       </div>
       <div class="d-flex gap-2 flex-wrap align-items-center">
         <form method="post" action="{% url 'pro_reschedule_action' r.pk 'accept' %}">{% csrf_token %}<button class="btn btn-primary btn-sm" type="submit">Accept</button></form>
