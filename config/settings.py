@@ -99,7 +99,12 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 SITE_URL = os.environ.get("SITE_URL", "http://127.0.0.1:8000").rstrip("/")
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
-if EMAIL_HOST_USER and EMAIL_HOST_PASSWORD:
+# Free hosts like Render block SMTP, so there you set BREVO_API_KEY + BREVO_SENDER_EMAIL instead (email goes over HTTPS).
+BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
+BREVO_SENDER_EMAIL = os.environ.get("BREVO_SENDER_EMAIL", "")  # must be a sender you verified inside Brevo
+if BREVO_API_KEY and BREVO_SENDER_EMAIL:
+    EMAIL_BACKEND = "photopholio.email_backends.BrevoEmailBackend"
+elif EMAIL_HOST_USER and EMAIL_HOST_PASSWORD:
     EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
     EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.gmail.com")
     EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
@@ -110,7 +115,7 @@ else:
 # How PhotoPholio earns: this percent of the photographer's SERVICE price (never of travel) is kept as commission.
 # The customer pays no extra fee. A single photographer can have their own percent in the admin.
 PLATFORM_COMMISSION_PERCENT = int(os.environ.get("PLATFORM_COMMISSION_PERCENT", "10"))
-DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", f"PhotoPholio <{EMAIL_HOST_USER or 'no-reply@photopholio.local'}>")
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", f"PhotoPholio <{BREVO_SENDER_EMAIL or EMAIL_HOST_USER or 'no-reply@photopholio.local'}>")
 
 # --- Auth --------------------------------------------------------------------
 LOGIN_URL = "login"

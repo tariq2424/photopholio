@@ -3014,3 +3014,34 @@ class TrackingTests(TestCase):
         b.refresh_from_db()
         self.assertEqual(b.dispute_outcome, "dismiss")
         self.assertEqual(self.client.get(reverse("admin:photopholio_booking_change", args=[b.pk])).status_code, 200)
+
+
+class BrevoBackendTests(TestCase):
+    """Email over HTTPS (for hosts that block SMTP). The network call is faked."""
+
+    def _send(self, **kw):
+        from django.core.mail import EmailMultiAlternatives
+        m = EmailMultiAlternatives("Hello", "plain body", "PhotoPholio <me@example.com>", ["you@example.com"])
+        m.attach_alternative("<p>html body</p>", "text/html")
+        from photopholio.email_backends import BrevoEmailBackend
+        return BrevoEmailBackend(**kw).send_messages([m])
+
+    @override_settings(BREVO_API_KEY="key123")
+    def test_sends_the_right_request(self):
+        import json
+        with patch("urllib.request.urlopen") as op:
+            self.assertEqual(self._send(), 1)
+        req = op.call_args[0][0]
+        body = json.loads(req.data)
+        self.assertEqual(req.get_header("Api-key"), "key123")
+        self.assertEqual((body["sender"], body["to"], body["subject"]),
+                         ({"email": "me@example.com", "name": "PhotoPholio"}, [{"email": "you@example.com"}], "Hello"))
+        self.assertEqual((body["htmlContent"], body["textContent"]), ("<p>html body</p>", "plain body"))
+
+    @override_settings(BREVO_API_KEY="key123", EMAIL_BACKEND="photopholio.email_backends.BrevoEmailBackend")
+    def test_failure_is_raised_or_swallowed_by_flag_and_never_breaks_a_booking_email(self):
+        with patch("urllib.request.urlopen", side_effect=OSError("down")):
+            with self.assertRaises(OSError):
+                self._send()
+            self.assertEqual(self._send(fail_silently=True), 0)
+            self.assertFalse(emails._send("a@b.com", "Subj", "Head", ["x"]))  # emails.py catches it, returns False
