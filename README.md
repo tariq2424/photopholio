@@ -105,7 +105,12 @@ photopholio/
 ```
 
 ## Email settings
-Without settings, emails are printed in the terminal that runs the server. For real emails set these environment variables:
-`EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` (a Gmail App Password), and `SITE_URL` (for example `https://yourname.pythonanywhere.com`).
+There are three ways, chosen automatically from environment variables (never put keys in the code or on GitHub):
+
+1. **Nothing set (default, local):** emails are printed in the terminal that runs the server.
+2. **Gmail SMTP (local or a normal server):** `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` (a Gmail App Password) and `SITE_URL`.
+3. **Brevo over HTTPS (for free hosts like Render, which block SMTP ports 25/465/587):** `BREVO_API_KEY`, `BREVO_SENDER_EMAIL` (a sender verified inside Brevo) and `SITE_URL`. The free Brevo plan allows 300 emails a day. Set these only in the host's Environment settings. If `BREVO_API_KEY` and `BREVO_SENDER_EMAIL` are both set, Brevo is used before Gmail SMTP.
+
+`SITE_URL` is the address used in links inside emails, for example `https://photopholio-xxxx.onrender.com`.
 Check it with `python manage.py send_test_email you@example.com`. A failed email never stops a booking or payment.
 `python manage.py expire_bookings` cancels accepted bookings that were not paid within 24 hours (optional daily task).
