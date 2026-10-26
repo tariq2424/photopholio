@@ -156,7 +156,7 @@ class PhotographerAccountTests(TestCase):
             self.assertRedirects(r, reverse("pro_dashboard"), fetch_redirect_response=False)
             self.client.logout()
             r = self.client.post(reverse(page), {"username": "cust", "password": "pass12345"})
-            self.assertRedirects(r, reverse("my_bookings"), fetch_redirect_response=False)
+            self.assertRedirects(r, reverse("home"), fetch_redirect_response=False)
             self.client.logout()
 
     def test_login_with_email_any_capitals_and_spaces(self):
@@ -180,7 +180,7 @@ class PhotographerAccountTests(TestCase):
     def test_next_page_is_honoured_and_logged_in_users_skip_the_form(self):
         r = self.client.post(reverse("login") + "?next=/contact/", {"username": "cust", "password": "pass12345"})
         self.assertRedirects(r, "/contact/", fetch_redirect_response=False)
-        self.assertRedirects(self.client.get(reverse("login")), reverse("my_bookings"), fetch_redirect_response=False)
+        self.assertRedirects(self.client.get(reverse("login")), reverse("home"), fetch_redirect_response=False)
         self.client.logout()
         self.client.login(username="pro", password="pass12345")
         self.assertRedirects(self.client.get(reverse("login")), reverse("pro_dashboard"), fetch_redirect_response=False)
@@ -2737,7 +2737,7 @@ class MoneyTests(TestCase):
 
 
 class SignupThenLoginTests(TestCase):
-    """Creating an account does not log you in: signup -> login page (username filled in) -> your own dashboard."""
+    """Creating an account does not log you in: signup -> login page (username filled in) -> home page (customers) or Dashboard (photographers)."""
 
     def signup(self, role, username="newperson"):
         return self.client.post(reverse("register"), {
@@ -2759,10 +2759,10 @@ class SignupThenLoginTests(TestCase):
         # only for the next visit
         self.assertNotContains(self.client.get(reverse("login")), 'value="newperson"')
 
-    def test_customer_logs_in_and_lands_on_my_bookings(self):
+    def test_customer_logs_in_and_lands_on_the_home_page(self):
         self.signup("customer")
         r = self.client.post(reverse("login"), {"username": "newperson", "password": "Str0ng-pass-99"})
-        self.assertRedirects(r, reverse("my_bookings"), fetch_redirect_response=False)
+        self.assertRedirects(r, reverse("home"), fetch_redirect_response=False)
         self.assertEqual(self.client.get(reverse("my_bookings")).status_code, 200)
 
     def test_photographer_signup_goes_to_the_photographer_login_then_the_dashboard(self):

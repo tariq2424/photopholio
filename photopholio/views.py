@@ -393,7 +393,7 @@ def contact(request):
 class SmartLoginView(LoginView):
     """
     The only login view. Customers and photographers sign in here (also reachable at /photographer/login/).
-    Everyone lands on their own dashboard (photographers: Dashboard, customers: My bookings),
+    Photographers land on their Dashboard, customers on the home page (My bookings is in the menu),
     unless a ?next= page was requested. Right after creating an account the username is already filled in.
     """
     template_name = "photopholio/login.html"
@@ -418,7 +418,7 @@ class SmartLoginView(LoginView):
     def get_default_redirect_url(self):
         if get_role(self.request.user) == "photographer":
             return reverse("pro_dashboard")
-        return reverse("my_bookings")
+        return reverse("home")  # customers start on the home page; My bookings is one click away
 
 
 def _own_profile(request):
