@@ -97,11 +97,16 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--reset", action="store_true", help="Delete existing photographers first")
+        parser.add_argument("--reset-demo", action="store_true", dest="reset_demo",
+                            help="Delete and recreate only the demo photographers (real accounts and their data stay)")
 
     def handle(self, *args, **opts):
         if opts["reset"]:
             Photographer.objects.all().delete()
-        if Photographer.objects.exists():
+        elif opts["reset_demo"]:
+            # Only the fictional ones: no login attached and a name from the demo list below.
+            Photographer.objects.filter(user__isnull=True, name__in=[row[0] for row in PHOTOGRAPHERS]).delete()
+        if Photographer.objects.exists() and not opts["reset_demo"]:
             self.stdout.write("Photographers already exist. Use --reset to recreate.")
             return
 

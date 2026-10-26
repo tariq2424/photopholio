@@ -104,6 +104,13 @@ photopholio/
   tests.py              automated tests
 ```
 
+## Photo storage (Cloudinary)
+Uploaded photos (profile pictures and portfolio photos) are stored on the server's disk by default. Free hosts such as Render wipe that disk on every deploy and restart, so photos would disappear. To keep them forever, create a free Cloudinary account and set one environment variable in the host's Environment settings (never in the code or on GitHub):
+
+`CLOUDINARY_URL` = the "API environment variable" from your Cloudinary dashboard (it looks like `cloudinary://key:secret@cloud-name`).
+
+With it set, every new upload goes to Cloudinary and stays there across deploys. Without it, photos use the local `media/` folder as before, so local development needs no setup. Photos uploaded before switching are not moved; upload them again. The demo photographers can be rebuilt once on Render by adding the variable `RESEED_DEMO=1`, deploying, then deleting that variable (it runs `seed_demo --reset-demo`, which only touches the fictional photographers, never real accounts).
+
 ## Email settings
 There are three ways, chosen automatically from environment variables (never put keys in the code or on GitHub):
 

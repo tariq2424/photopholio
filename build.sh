@@ -4,6 +4,11 @@ set -o errexit
 pip install -r requirements.txt
 python manage.py collectstatic --no-input
 python manage.py migrate
-python manage.py seed_demo
+if [ "$RESEED_DEMO" = "1" ]; then
+  # One-off: rebuild only the demo photographers (e.g. after switching photo storage). Remove RESEED_DEMO afterwards.
+  python manage.py seed_demo --reset-demo
+else
+  python manage.py seed_demo
+fi
 # Creates the admin only if DJANGO_SUPERUSER_* env vars are set (ignore error if it already exists)
 python manage.py createsuperuser --no-input || true

@@ -3045,3 +3045,45 @@ class BrevoBackendTests(TestCase):
                 self._send()
             self.assertEqual(self._send(fail_silently=True), 0)
             self.assertFalse(emails._send("a@b.com", "Subj", "Head", ["x"]))  # emails.py catches it, returns False
+
+
+class CloudinaryStorageTests(TestCase):
+    """Photos go to Cloudinary only when CLOUDINARY_URL is set; otherwise nothing changes. No real network is used."""
+
+    def _storage(self, env):
+        import json, os, subprocess, sys
+        from django.conf import settings
+        code = ("import json, django; from django.conf import settings; "
+                "print(json.dumps([settings.STORAGES['default']['BACKEND'], 'cloudinary_storage' in settings.INSTALLED_APPS]))")
+        run_env = {k: v for k, v in os.environ.items() if k != "CLOUDINARY_URL"}
+        run_env.update(env, DJANGO_SETTINGS_MODULE="config.settings")
+        out = subprocess.run([sys.executable, "-c", code], cwd=settings.BASE_DIR, env=run_env, capture_output=True, text=True, timeout=60)
+        return json.loads(out.stdout.strip().splitlines()[-1])
+
+    def test_local_disk_without_the_variable(self):
+        self.assertEqual(self._storage({}), ["django.core.files.storage.FileSystemStorage", False])
+
+    def test_cloudinary_with_the_variable(self):
+        self.assertEqual(self._storage({"CLOUDINARY_URL": "cloudinary://key:secret@democloud"}),
+                         ["cloudinary_storage.storage.MediaCloudinaryStorage", True])
+
+
+class SeedResetDemoTests(TestCase):
+    """--reset-demo rebuilds only the fictional photographers and never touches real accounts."""
+
+    def test_reset_demo_keeps_real_photographers(self):
+        from io import StringIO
+        from django.core.management import call_command
+        from photopholio.management.commands.seed_demo import PHOTOGRAPHERS
+        country = Country.objects.create(name="India")
+        city = City.objects.create(state=State.objects.create(country=country, name="Gujarat"), name="Vadodara")
+        real_user = User.objects.create_user("realpro", password="x-pass-12345", email="r@example.com")
+        real = Photographer.objects.create(name="Real Person", bio="b", specialities="event", city=city, user=real_user, status="approved")
+        with override_settings(MEDIA_ROOT=TMP_MEDIA):
+            call_command("seed_demo", stdout=StringIO())  # real photographer exists, so a plain seed does nothing
+            self.assertEqual(Photographer.objects.count(), 1)
+            call_command("seed_demo", "--reset-demo", stdout=StringIO())
+            self.assertEqual(Photographer.objects.count(), 1 + len(PHOTOGRAPHERS))
+            self.assertTrue(Photographer.objects.filter(pk=real.pk).exists())
+            call_command("seed_demo", "--reset-demo", stdout=StringIO())  # twice: still no duplicates
+            self.assertEqual(Photographer.objects.count(), 1 + len(PHOTOGRAPHERS))

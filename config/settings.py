@@ -89,6 +89,13 @@ STORAGES = {
 }
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+# Uploaded photos. On free hosts (Render) the server's disk is wiped on every deploy and restart, so photos would vanish.
+# Set CLOUDINARY_URL (from your Cloudinary dashboard, in the host's Environment settings only, never in code) and every upload
+# goes to Cloudinary instead and stays forever. Without it, photos use the local media/ folder as before.
+CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL", "")
+if CLOUDINARY_URL:
+    INSTALLED_APPS += ["cloudinary_storage", "cloudinary"]
+    STORAGES["default"] = {"BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage"}
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
