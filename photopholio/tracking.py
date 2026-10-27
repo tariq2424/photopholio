@@ -70,7 +70,7 @@ def photographer_step(booking_id, user, step, today=None, now=None):
     if step not in STEPS:
         raise FlowError("Unknown action.")
     with transaction.atomic():
-        booking = (Booking.objects.select_for_update().select_related("photographer__user", "user").get(pk=booking_id))
+        booking = (Booking.objects.select_for_update(of=("self",)).select_related("photographer__user", "user").get(pk=booking_id))
         if booking.photographer.user_id != user.pk:
             raise FlowError("This is not your booking.")
         if booking.status != "confirmed":
@@ -130,7 +130,7 @@ def confirm_completed(booking_id, user, now=None):
     """The customer confirms the shoot took place. The photographer's money becomes payable."""
     now = now or timezone.now()
     with transaction.atomic():
-        booking = Booking.objects.select_for_update().select_related("photographer__user", "user").get(pk=booking_id)
+        booking = Booking.objects.select_for_update(of=("self",)).select_related("photographer__user", "user").get(pk=booking_id)
         if booking.user_id != user.pk:
             raise FlowError("This is not your booking.")
         if booking.status != "completed" or not booking.completed_at:
@@ -157,7 +157,7 @@ def report_problem(booking_id, user, kind, text, today=None, now=None):
     if len(text) > MAX_TEXT_CHARS:
         raise FlowError(f"Please keep it under {MAX_TEXT_CHARS} characters.")
     with transaction.atomic():
-        booking = Booking.objects.select_for_update().select_related("photographer__user", "user").get(pk=booking_id)
+        booking = Booking.objects.select_for_update(of=("self",)).select_related("photographer__user", "user").get(pk=booking_id)
         if booking.user_id != user.pk:
             raise FlowError("This is not your booking.")
         if booking.dispute_status:
@@ -210,7 +210,7 @@ def resolve_dispute(booking_id, admin_user, outcome, note, now=None):
     if len(note) < 5:
         raise FlowError("Write a short note explaining the decision. Both people will see it.")
     with transaction.atomic():
-        booking = Booking.objects.select_for_update().select_related("photographer__user", "user").get(pk=booking_id)
+        booking = Booking.objects.select_for_update(of=("self",)).select_related("photographer__user", "user").get(pk=booking_id)
         if not booking.has_open_dispute:
             raise FlowError("There is no open report on this booking.")
         if outcome == "refund":

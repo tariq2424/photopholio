@@ -103,7 +103,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # With no email settings, emails are printed in the terminal running the server (nothing to set up).
 # For real emails set these environment variables (Gmail needs an "App Password", not your normal password):
 #   EMAIL_HOST_USER, EMAIL_HOST_PASSWORD   and   SITE_URL (the address used in links inside emails)
-SITE_URL = os.environ.get("SITE_URL", "http://127.0.0.1:8000").rstrip("/")
+# The address used in links inside emails. If SITE_URL is not set, a Render deployment falls back to the address Render itself
+# provides (RENDER_EXTERNAL_URL), so email buttons never point at 127.0.0.1 by mistake.
+SITE_URL = (os.environ.get("SITE_URL") or os.environ.get("RENDER_EXTERNAL_URL") or "http://127.0.0.1:8000").rstrip("/")
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 # Free hosts like Render block SMTP, so there you set BREVO_API_KEY + BREVO_SENDER_EMAIL instead (email goes over HTTPS).

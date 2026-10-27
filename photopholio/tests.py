@@ -3087,3 +3087,32 @@ class SeedResetDemoTests(TestCase):
             self.assertTrue(Photographer.objects.filter(pk=real.pk).exists())
             call_command("seed_demo", "--reset-demo", stdout=StringIO())  # twice: still no duplicates
             self.assertEqual(Photographer.objects.count(), 1 + len(PHOTOGRAPHERS))
+
+
+class DarkModeAndSiteUrlTests(TestCase):
+    def test_pages_carry_the_theme_switch_and_the_early_theme_script(self):
+        page = self.client.get(reverse("home"))
+        self.assertContains(page, 'id="themeToggle"')
+        self.assertContains(page, "pp-theme")  # the saved choice is read before the page paints
+        self.assertContains(page, 'name="color-scheme"')
+
+    def test_dark_styles_exist_and_light_styles_are_untouched(self):
+        from django.conf import settings
+        css = (settings.BASE_DIR / "photopholio" / "static" / "photopholio" / "css" / "style.css").read_text()
+        self.assertIn('[data-bs-theme="dark"]', css)
+        self.assertTrue(css.startswith(":root{"))  # the original light variables still come first
+
+    def test_site_url_falls_back_to_the_render_address(self):
+        import json, os, subprocess, sys
+        from django.conf import settings
+        code = "from django.conf import settings; import json; print(json.dumps(settings.SITE_URL))"
+
+        def run(env):
+            base = {k: v for k, v in os.environ.items() if k not in ("SITE_URL", "RENDER_EXTERNAL_URL")}
+            base.update(env, DJANGO_SETTINGS_MODULE="config.settings")
+            out = subprocess.run([sys.executable, "-c", code], cwd=settings.BASE_DIR, env=base, capture_output=True, text=True, timeout=60)
+            return json.loads(out.stdout.strip().splitlines()[-1])
+
+        self.assertEqual(run({}), "http://127.0.0.1:8000")
+        self.assertEqual(run({"RENDER_EXTERNAL_URL": "https://site.onrender.com/"}), "https://site.onrender.com")
+        self.assertEqual(run({"SITE_URL": "https://mine.example/", "RENDER_EXTERNAL_URL": "https://site.onrender.com"}), "https://mine.example")

@@ -211,7 +211,7 @@ def accept_reschedule(req, today=None):
     today = today or timezone.localdate()
     now = timezone.now()
     with transaction.atomic():
-        req = RescheduleRequest.objects.select_for_update().select_related("booking__photographer", "booking__user").get(pk=req.pk)
+        req = RescheduleRequest.objects.select_for_update(of=("self",)).select_related("booking__photographer", "booking__user").get(pk=req.pk)
         booking = req.booking
         if req.status != "pending":
             raise FlowError("This request is no longer waiting for your answer.")

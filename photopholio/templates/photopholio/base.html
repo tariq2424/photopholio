@@ -3,6 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    /* Pick the theme before the page paints, so a dark-mode visitor never sees a white flash.
+       The saved choice wins; otherwise follow the device. Storage can be blocked, so it is wrapped. */
+    (function () {
+      var theme = 'light';
+      try { theme = localStorage.getItem('pp-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); } catch (e) {}
+      document.documentElement.setAttribute('data-bs-theme', theme === 'dark' ? 'dark' : 'light');
+    })();
+  </script>
   <title>{% block title %}Book professional photographers online{% endblock %} | PhotoPholio</title>
   <meta name="description" content="Search photographers by city, style and rating, view real portfolios and book your date online.">
   <link rel="icon" type="image/svg+xml" href="{% static 'photopholio/img/logo.svg' %}">
@@ -24,6 +34,7 @@
         {% if not user.is_authenticated %}<li class="nav-item"><a class="nav-link" href="{% url 'register' %}?role=photographer">For photographers</a></li>{% endif %}
       </ul>
       <div class="d-flex align-items-center gap-2 mt-3 mt-lg-0">
+      <button type="button" class="btn btn-outline-dark theme-toggle" id="themeToggle" aria-label="Switch to dark mode" title="Switch between light and dark mode"><i class="bi bi-moon-stars theme-moon" aria-hidden="true"></i><i class="bi bi-sun theme-sun" aria-hidden="true"></i></button>
       {% if user.is_authenticated %}
         <div class="dropdown">
           <button class="btn btn-outline-dark dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-person-circle"></i> {{ user.first_name|default:user.username }}</button>

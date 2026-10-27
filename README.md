@@ -104,12 +104,18 @@ photopholio/
   tests.py              automated tests
 ```
 
+## Testing on PostgreSQL
+The live site runs on PostgreSQL but the quickest way to run the tests is SQLite. Some mistakes only show on PostgreSQL (for example, row locks combined with `select_related` over an optional relation raise `FOR UPDATE cannot be applied to the nullable side of an outer join`), so before a release run the important suites against a Postgres database too: `DATABASE_URL=postgres://user@localhost/dbname python manage.py test photopholio`.
+
 ## Photo storage (Cloudinary)
 Uploaded photos (profile pictures and portfolio photos) are stored on the server's disk by default. Free hosts such as Render wipe that disk on every deploy and restart, so photos would disappear. To keep them forever, create a free Cloudinary account and set one environment variable in the host's Environment settings (never in the code or on GitHub):
 
 `CLOUDINARY_URL` = the "API environment variable" from your Cloudinary dashboard (it looks like `cloudinary://key:secret@cloud-name`).
 
 With it set, every new upload goes to Cloudinary and stays there across deploys. Without it, photos use the local `media/` folder as before, so local development needs no setup. Photos uploaded before switching are not moved; upload them again. The demo photographers can be rebuilt once on Render by adding the variable `RESEED_DEMO=1`, deploying, then deleting that variable (it runs `seed_demo --reset-demo`, which only touches the fictional photographers, never real accounts).
+
+## Dark mode
+Every page has a light/dark switch in the top bar. The first visit follows the device setting (`prefers-color-scheme`); after that the visitor's own choice is remembered in the browser (`localStorage`, wrapped so a blocked browser still works). The theme is set in `<head>` before the page paints, so there is no white flash. Bootstrap's `data-bs-theme` handles its own components and `style.css` recolours PhotoPholio's pieces (cards, status pills, calendar, tracker) in one clearly marked block, so light mode is unchanged.
 
 ## Email settings
 There are three ways, chosen automatically from environment variables (never put keys in the code or on GitHub):
@@ -118,6 +124,6 @@ There are three ways, chosen automatically from environment variables (never put
 2. **Gmail SMTP (local or a normal server):** `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` (a Gmail App Password) and `SITE_URL`.
 3. **Brevo over HTTPS (for free hosts like Render, which block SMTP ports 25/465/587):** `BREVO_API_KEY`, `BREVO_SENDER_EMAIL` (a sender verified inside Brevo) and `SITE_URL`. The free Brevo plan allows 300 emails a day. Set these only in the host's Environment settings. If `BREVO_API_KEY` and `BREVO_SENDER_EMAIL` are both set, Brevo is used before Gmail SMTP.
 
-`SITE_URL` is the address used in links inside emails, for example `https://photopholio-xxxx.onrender.com`.
+`SITE_URL` is the address used in links inside emails, for example `https://photopholio-xxxx.onrender.com`. On Render, if it is not set, the site falls back to the address Render provides, so the email buttons never point at `127.0.0.1`.
 Check it with `python manage.py send_test_email you@example.com`. A failed email never stops a booking or payment.
 `python manage.py expire_bookings` cancels accepted bookings that were not paid within 24 hours (optional daily task).

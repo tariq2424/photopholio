@@ -288,3 +288,71 @@ footer.site-footer .brand .logo-word{font-size:1.5rem}
 .tracker-state{font-size:.75rem;font-weight:700;padding:.1rem .55rem;border-radius:99px;background:#eef0f6;color:var(--ink)}
 .tracker-arrived,.tracker-in_progress{background:#fff3d6}
 .tracker-finished{background:#dff3e4}
+
+
+/* ---------------------------------------------------------------------------
+   Dark mode. Bootstrap's own components follow data-bs-theme on <html>; this block recolours PhotoPholio's
+   own pieces. Light mode is untouched: everything here applies only when the theme is dark.
+   --------------------------------------------------------------------------- */
+.theme-toggle{display:inline-flex;align-items:center;justify-content:center;width:2.6rem;height:2.6rem;padding:0}
+.theme-sun{display:none}
+[data-bs-theme="dark"] .theme-moon{display:none}
+[data-bs-theme="dark"] .theme-sun{display:inline}
+
+[data-bs-theme="dark"]{
+  color-scheme:dark;
+  --ink:#e8eaf0; --paper:#0e1117; --card:#161b24; --line:#2a313d; --muted:#9aa3b2;
+  --indigo:#9aa7f8; --indigo-d:#c3ccff; --fill:#4a5bd0; --fill-d:#3c4cb8;
+  --bs-link-color:#9fb0ff; --bs-link-hover-color:#c3ccff;
+  --bs-body-bg:var(--paper); --bs-body-color:var(--ink);
+}
+[data-bs-theme="dark"] .site-nav{background:rgba(14,17,23,.92)}
+[data-bs-theme="dark"] .navbar-toggler-icon{filter:invert(1)}
+[data-bs-theme="dark"] .btn-primary{--bs-btn-bg:var(--fill);--bs-btn-border-color:var(--fill);--bs-btn-hover-bg:var(--fill-d);--bs-btn-hover-border-color:var(--fill-d);--bs-btn-active-bg:var(--fill-d);--bs-btn-active-border-color:var(--fill-d);--bs-btn-color:#fff;--bs-btn-hover-color:#fff}
+[data-bs-theme="dark"] .btn-outline-dark{--bs-btn-color:var(--ink);--bs-btn-border-color:#3a4252;--bs-btn-hover-color:var(--paper);--bs-btn-hover-bg:var(--ink);--bs-btn-hover-border-color:var(--ink);--bs-btn-active-color:var(--paper);--bs-btn-active-bg:var(--ink);--bs-btn-active-border-color:var(--ink)}
+[data-bs-theme="dark"] .form-control,[data-bs-theme="dark"] .form-select{background-color:var(--card);border-color:#3a4252;color:var(--ink)}
+[data-bs-theme="dark"] .searchbar .form-control,[data-bs-theme="dark"] .searchbar .form-select{background-color:transparent}
+[data-bs-theme="dark"] .form-control::placeholder{color:#6f7888}
+[data-bs-theme="dark"] .form-control:focus,[data-bs-theme="dark"] .form-select:focus{border-color:var(--indigo);box-shadow:0 0 0 .2rem rgba(154,167,248,.22)}
+[data-bs-theme="dark"] .chip{border-color:#3a4252}
+[data-bs-theme="dark"] .chip:hover,[data-bs-theme="dark"] .avatar,[data-bs-theme="dark"] .steps li::before,
+[data-bs-theme="dark"] .pagination .active .page-link{background:var(--fill);border-color:var(--fill);color:#fff}
+[data-bs-theme="dark"] .pagination .page-link{background:var(--card);border-color:var(--line)}
+[data-bs-theme="dark"] .pcard-full{color:var(--paper)}
+[data-bs-theme="dark"] .pcard-media,[data-bs-theme="dark"] .thumb,[data-bs-theme="dark"] .masonry button,[data-bs-theme="dark"] .mosaic a{background:#222836}
+[data-bs-theme="dark"] .mosaic a{border-color:#e8eaf0}
+[data-bs-theme="dark"] .heart{background:rgba(22,27,36,.92)}
+[data-bs-theme="dark"] .panel,[data-bs-theme="dark"] .booking,[data-bs-theme="dark"] .book-card,[data-bs-theme="dark"] .pkg,[data-bs-theme="dark"] .stat,[data-bs-theme="dark"] .filters{box-shadow:none}
+[data-bs-theme="dark"] .searchbar,[data-bs-theme="dark"] .book-card{box-shadow:0 18px 34px -26px rgba(0,0,0,.9)}
+
+/* status pills and tints */
+[data-bs-theme="dark"] .status-pending,[data-bs-theme="dark"] .pstatus-pending{background:#3d3210;color:#f3d27a}
+[data-bs-theme="dark"] .status-confirmed{background:#242d5c;color:#c3ccff}
+[data-bs-theme="dark"] .status-accepted{background:#0c3550;color:#8fd3f5}
+[data-bs-theme="dark"] .status-completed,[data-bs-theme="dark"] .pstatus-approved{background:#12331f;color:#7fd8a5}
+[data-bs-theme="dark"] .status-cancelled,[data-bs-theme="dark"] .pstatus-draft{background:#2a2f38;color:#aeb6c3}
+[data-bs-theme="dark"] .status-declined,[data-bs-theme="dark"] .pstatus-rejected{background:#4a1b22;color:#f4a3ad}
+[data-bs-theme="dark"] .role-card{border-color:#3a4252}
+[data-bs-theme="dark"] .role-card:has(input:checked),[data-bs-theme="dark"] .pkg-option:has(input:checked){background:#1e2547;border-color:var(--indigo)}
+[data-bs-theme="dark"] .pkg-option{border-color:#3a4252}
+[data-bs-theme="dark"] .verified-pill{background:#1e2547;color:#c3ccff}
+[data-bs-theme="dark"] .reply{background:#1b2030}
+[data-bs-theme="dark"] .star-input label{color:#4b5563}
+[data-bs-theme="dark"] .booking:has(.status-confirmed){border-left-color:#7b8aef}
+[data-bs-theme="dark"] .booking:has(.status-completed){border-left-color:#4cc38a}
+[data-bs-theme="dark"] .booking:has(.status-cancelled),[data-bs-theme="dark"] .booking:has(.status-declined){border-left-color:#4b5563}
+
+/* availability calendar */
+[data-bs-theme="dark"] .cal-day.past{color:#4b5563}
+[data-bs-theme="dark"] .cal-day.free{background:#12331f;color:#7fd8a5}
+[data-bs-theme="dark"] button.cal-day.free:hover,[data-bs-theme="dark"] .cal-day.picked{background:#198754;color:#fff}
+[data-bs-theme="dark"] .cal-day.booked{background:#2a2f38;color:#6b7482}
+[data-bs-theme="dark"] .cal-day.blocked{background:repeating-linear-gradient(45deg,#3d3210,#3d3210 4px,#52431a 4px,#52431a 8px);color:#f3d27a}
+[data-bs-theme="dark"] .cal-key.free{background:#12331f;border-color:#2e9e62}
+[data-bs-theme="dark"] .cal-key.booked{background:#2a2f38;border-color:#4b5563}
+[data-bs-theme="dark"] .cal-key.blocked{background:repeating-linear-gradient(45deg,#3d3210,#3d3210 3px,#52431a 3px,#52431a 6px);border-color:#8a6d1c}
+
+/* shoot tracker */
+[data-bs-theme="dark"] .tracker-state{background:#242a36;color:var(--ink)}
+[data-bs-theme="dark"] .tracker-arrived,[data-bs-theme="dark"] .tracker-in_progress{background:#3d3210;color:#f3d27a}
+[data-bs-theme="dark"] .tracker-finished{background:#12331f;color:#7fd8a5}
