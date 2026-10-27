@@ -97,6 +97,16 @@ if CLOUDINARY_URL:
     INSTALLED_APPS += ["cloudinary_storage", "cloudinary"]
     STORAGES["default"] = {"BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage"}
 
+# One line in the host's logs at every start, so a missing or mistyped variable is visible without guessing.
+# (The secret itself is never printed: only whether it is set and whether it looks right.)
+if os.environ.get("RENDER"):
+    import sys
+    _looks_ok = CLOUDINARY_URL.startswith("cloudinary://") and "@" in CLOUDINARY_URL
+    print("[photopholio] photo storage: %s | CLOUDINARY_URL %s | commit %s" % (
+        "Cloudinary" if CLOUDINARY_URL else "LOCAL DISK (photos vanish on deploy)",
+        ("set, format looks right" if _looks_ok else "set but the format looks WRONG (needs cloudinary://KEY:SECRET@CLOUDNAME)") if CLOUDINARY_URL else "NOT set",
+        (os.environ.get("RENDER_GIT_COMMIT") or "unknown")[:7]), file=sys.stderr)
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # --- Email ----------------------------------------------------------------------

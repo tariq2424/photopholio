@@ -3,6 +3,8 @@
 set -o errexit
 pip install -r requirements.txt
 python manage.py collectstatic --no-input
+# Fail loudly in the build log if the photo-storage packages did not install
+python -c "import cloudinary, cloudinary_storage; print('[photopholio] cloudinary packages installed')"
 python manage.py migrate
 if [ "$RESEED_DEMO" = "1" ]; then
   # One-off: rebuild only the demo photographers (e.g. after switching photo storage). Remove RESEED_DEMO afterwards.
