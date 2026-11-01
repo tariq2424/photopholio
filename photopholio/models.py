@@ -154,13 +154,32 @@ class Photographer(models.Model):
     def published_photo_count(self):
         return Photo.objects.filter(portfolio__photographer=self, status="published").count()
 
+    def portfolio_counts(self):
+        """[(portfolio, published photo count)] for every portfolio this photographer has."""
+        from django.db.models import Count, Q
+        rows = self.portfolios.annotate(n=Count("photos", filter=Q(photos__status="published"))).order_by("created_at")
+        return [(pf, pf.n) for pf in rows]
+
+    def portfolio_gaps(self):
+        """Portfolios that still have fewer than MIN_PHOTOS published photos: [(portfolio, count)]."""
+        return [(pf, n) for pf, n in self.portfolio_counts() if n < self.MIN_PHOTOS]
+
     def checklist(self):
         """What an admin looks for before approving. Used on the dashboard and in the admin."""
+        counts = self.portfolio_counts()
+        gaps = [(pf, n) for pf, n in counts if n < self.MIN_PHOTOS]
+        if not counts:
+            photo_label = f"Create a portfolio with at least {self.MIN_PHOTOS} photos"
+        elif gaps:
+            names = ", ".join(f"\u201c{pf.title}\u201d ({n}/{self.MIN_PHOTOS})" for pf, n in gaps)
+            photo_label = f"Every portfolio needs at least {self.MIN_PHOTOS} photos. Still short: {names}"
+        else:
+            photo_label = f"Every portfolio has at least {self.MIN_PHOTOS} photos"
         return [
             ("Profile photo uploaded", bool(self.image)),
             (f"Bio of at least {self.MIN_BIO_CHARS} characters", len((self.bio or "").strip()) >= self.MIN_BIO_CHARS),
             ("City added", bool(self.city_id)),
-            (f"At least {self.MIN_PHOTOS} portfolio photos", self.published_photo_count() >= self.MIN_PHOTOS),
+            (photo_label, bool(counts) and not gaps),
         ]
 
     @property
@@ -706,3 +725,26 @@ class ShootEvent(models.Model):
 
     def __str__(self):
         return f"{self.booking_id} {self.actor_role}: {self.action}"
+
+
+class Notification(models.Model):
+    """A message shown in the bell menu. Created next to every email the site sends."""
+    KINDS = [("booking", "Booking"), ("payment", "Payment"), ("review", "Review"),
+             ("photos", "Photos"), ("profile", "Profile"), ("alert", "Needs attention"),
+             ("welcome", "Welcome"), ("new", "New on PhotoPholio")]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="notifications")
+    kind = models.CharField(max_length=12, choices=KINDS, default="booking")
+    title = models.CharField(max_length=160)
+    body = models.CharField(max_length=300, blank=True)
+    url = models.CharField(max_length=300, blank=True)
+    is_read = models.BooleanField(default=False)
+    cleared = models.BooleanField(default=False, help_text="Hidden from the bell, still listed on the notifications page.")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [models.Index(fields=["user", "is_read"])]
+
+    def __str__(self):
+        return f"{self.user.username}: {self.title}"

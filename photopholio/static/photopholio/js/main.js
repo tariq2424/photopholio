@@ -18,10 +18,152 @@ document.addEventListener('click', function (e) {
     button.setAttribute('aria-pressed', dark ? 'true' : 'false');
   }
   label();
-  button.addEventListener('click', function () {
-    var next = current() === 'dark' ? 'light' : 'dark';
+  function apply(next) {
     document.documentElement.setAttribute('data-bs-theme', next);
     try { localStorage.setItem('pp-theme', next); } catch (e) {}
     label();
+  }
+  button.addEventListener('click', function () {
+    var next = current() === 'dark' ? 'light' : 'dark';
+    var root = document.documentElement;
+    var calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (document.startViewTransition && !calm) {
+      // The new theme grows out of the button like a circle of light.
+      var r = button.getBoundingClientRect();
+      var x = r.left + r.width / 2, y = r.top + r.height / 2;
+      var radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+      var vt = document.startViewTransition(function () { apply(next); });
+      vt.ready.then(function () {
+        root.animate({clipPath: ['circle(0px at ' + x + 'px ' + y + 'px)', 'circle(' + radius + 'px at ' + x + 'px ' + y + 'px)']},
+          {duration: 1100, easing: 'cubic-bezier(.65,0,.35,1)', pseudoElement: '::view-transition-new(root)'});
+      }).catch(function () {});
+      return;
+    }
+    root.classList.add('theme-anim');          // fade the colours instead of snapping
+    apply(next);
+    setTimeout(function () { root.classList.remove('theme-anim'); }, 950);
   });
+})();
+
+// Toasts: every Django message arrives as a toast. ppToast('success', 'text') shows one from script too.
+(function () {
+  var host = document.getElementById('toastHost');
+  if (!host || !window.bootstrap) return;
+  var icons = {success: 'bi-check-circle-fill', danger: 'bi-x-octagon-fill', warning: 'bi-exclamation-triangle-fill', info: 'bi-info-circle-fill',
+    accepted: 'bi-patch-check-fill', money: 'bi-wallet2', neutral: 'bi-box-arrow-right'};
+  function show(el) {
+    var delay = parseInt(el.getAttribute('data-bs-delay'), 10) || 5500;
+    el.style.setProperty('--pp-delay', delay + 'ms');
+    var t = bootstrap.Toast.getOrCreateInstance(el, {autohide: false});
+    var gone = false;
+    function dismiss() {                         // slide out first, then let Bootstrap hide it
+      if (gone) return; gone = true;
+      el.classList.add('leaving');
+      setTimeout(function () { t.hide(); }, 280);
+    }
+    var bar = el.querySelector('.pp-toast-bar');
+    if (bar) bar.addEventListener('animationend', dismiss);   // the bar is the timer, so hovering (pause) holds the toast
+    else setTimeout(dismiss, delay);
+    var close = el.querySelector('.btn-close');
+    if (close) close.addEventListener('click', function (e) { e.stopImmediatePropagation(); e.preventDefault(); dismiss(); }, true);
+    el.addEventListener('mouseenter', function () { el.classList.add('paused'); });
+    el.addEventListener('mouseleave', function () { el.classList.remove('paused'); });
+    el.addEventListener('hidden.bs.toast', function () { el.remove(); });
+    el.addEventListener('animationend', function (e) { if (e.target === el) el.classList.remove('pp-enter'); });
+    el.classList.add('pp-enter');
+    t.show();
+  }
+  Array.prototype.forEach.call(host.querySelectorAll('.toast'), show);
+  window.ppToast = function (type, text) {
+    type = icons[type] ? type : 'info';
+    var el = document.createElement('div');
+    el.className = 'toast pp-toast t-' + type;
+    el.setAttribute('role', type === 'danger' ? 'alert' : 'status');
+    el.setAttribute('data-bs-delay', type === 'danger' || type === 'warning' ? '9000' : '5500');
+    el.innerHTML = '<div class="toast-body"><i class="bi ' + icons[type] + ' pp-toast-ico" aria-hidden="true"></i><span class="pp-toast-msg"></span>' +
+      '<button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button></div><div class="pp-toast-bar"></div>';
+    el.querySelector('.pp-toast-msg').textContent = text;
+    host.appendChild(el);
+    show(el);
+  };
+})();
+
+// Bell: refresh the unread number now and then, so a new notification shows up without a reload.
+(function () {
+  var bell = document.getElementById('bell');
+  var badge = document.getElementById('bellBadge');
+  if (!bell || !badge || !window.fetch) return;
+  function refresh() {
+    if (document.hidden) return;
+    fetch(bell.dataset.countUrl, {credentials: 'same-origin', headers: {'X-Requested-With': 'fetch'}})
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d) return;
+        badge.hidden = !d.unread;
+        badge.textContent = d.unread > 9 ? '9+' : d.unread;
+      }).catch(function () {});
+  }
+  setInterval(refresh, 60000);
+  document.addEventListener('visibilitychange', refresh);
+})();
+
+// Clearing from the bell works without reloading the page. Without JavaScript the form still posts normally.
+(function () {
+  var bell = document.getElementById('bell');
+  if (!bell || !window.fetch) return;
+  var badge = document.getElementById('bellBadge');
+  function setBadge(n) { if (badge) { badge.hidden = !n; badge.textContent = n > 9 ? '9+' : n; } }
+  function empty() {
+    var list = bell.querySelector('.bell-list');
+    list.innerHTML = '<div class="bell-empty"><i class="bi bi-bell-slash" aria-hidden="true"></i><span>You are all caught up.</span><a href="' + bell.dataset.listUrl + '?filter=cleared">View cleared</a></div>';
+    var head = bell.querySelector('.bell-head-actions'); if (head) head.hidden = true;
+  }
+  bell.addEventListener('submit', function (e) {
+    var form = e.target.closest('form[data-clear]');
+    if (!form) return;
+    e.preventDefault();
+    fetch(form.action, {method: 'POST', body: new FormData(form), credentials: 'same-origin',
+                        headers: {'X-Requested-With': 'fetch'}})
+      .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+      .then(function (d) {
+        setBadge(d.unread);
+        if (form.dataset.clear === 'all' || !d.remaining) { empty(); return; }
+        var row = form.closest('.bell-row'); if (row) row.remove();
+      })
+      .catch(function () { form.submit(); });
+  });
+})();
+
+// Small touches: sections that rise into view, numbers that count up.
+(function () {
+  var calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (calm || !('IntersectionObserver' in window)) return;
+  var groups = ['.kinds .kind', '.grid-cards .pcard-wrap', '.flow li', '.trust-row > div', '.cta-band', '.section-head', '.panel', '.pkg'];
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (!en.isIntersecting) return;
+      en.target.classList.add('in'); io.unobserve(en.target);
+      (function (el) { setTimeout(function () { el.classList.remove('reveal', 'in'); el.style.removeProperty('--d'); }, 1100); })(en.target);
+      var n = en.target.querySelector('[data-count]') || (en.target.hasAttribute('data-count') ? en.target : null);
+      if (n) countUp(n);
+    });
+  }, {threshold: .12});
+  groups.forEach(function (sel) {
+    Array.prototype.forEach.call(document.querySelectorAll(sel), function (el, i) {
+      if (el.getBoundingClientRect().top < innerHeight * .9) return;   // already on screen: leave it be
+      el.classList.add('reveal'); el.style.setProperty('--d', Math.min(i % 6, 5) * 70 + 'ms'); io.observe(el);
+    });
+  });
+  function countUp(n) {
+    var to = parseInt(n.getAttribute('data-count'), 10) || 0, pre = n.getAttribute('data-prefix') || '', suf = n.getAttribute('data-suffix') || '';
+    if (!to) return;
+    var t0 = null;
+    function step(t) {
+      if (t0 === null) t0 = t;
+      var p = Math.min(1, (t - t0) / 1100), e = 1 - Math.pow(1 - p, 3);
+      n.textContent = pre + Math.round(to * e) + suf;
+      if (p < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
 })();

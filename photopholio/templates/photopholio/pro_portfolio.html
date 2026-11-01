@@ -3,7 +3,7 @@
 {% block content %}
 <div class="container section">
   <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-1">My portfolio</h1>
-  <p class="muted mb-4">You need at least 4 photos of your own work to submit your profile. You have <strong>{{ photo_count }}</strong>.
+  <p class="muted mb-4">Every portfolio needs at least <strong>{{ min_photos }}</strong> photos of your own work before you can submit your profile. You have <strong>{{ photo_count }}</strong> in total.
     <a href="{% url 'pro_dashboard' %}">Back to dashboard</a></p>
 
   <div class="row g-5">
@@ -11,7 +11,8 @@
       {% for pf in portfolios %}
       <div class="panel mb-4">
         <div class="d-flex justify-content-between align-items-start gap-2">
-          <div><h3 class="mb-0">{{ pf.title }}</h3>{% if pf.description %}<p class="muted mb-2">{{ pf.description }}</p>{% endif %}</div>
+          <div><h3 class="mb-0">{{ pf.title }}</h3>
+            <p class="small mb-1 {% if pf.n >= min_photos %}text-success{% else %}text-danger{% endif %}">{{ pf.n }} of {{ min_photos }} photos{% if pf.n < min_photos %} &middot; add {{ pf.need }} more{% else %} &middot; ready{% endif %}</p>{% if pf.description %}<p class="muted mb-2">{{ pf.description }}</p>{% endif %}</div>
           <form method="post" action="{% url 'pro_portfolio_delete' pf.pk %}" onsubmit="return confirm('Delete this portfolio and all its photos?')">{% csrf_token %}<button class="btn btn-outline-danger btn-sm" type="submit">Delete</button></form>
         </div>
         <div class="thumbs">

@@ -39,7 +39,7 @@ urlpatterns = [
     path("photographer/reschedules/<int:pk>/<slug:action>/", views.pro_reschedule_action, name="pro_reschedule_action"),
     path("photographer/bookings/<int:pk>/cancel/", views.pro_booking_cancel, name="pro_booking_cancel"),
     path("photographer/bookings/<int:pk>/<slug:action>/", views.pro_booking_action, name="pro_booking_action"),
-    path("accounts/logout/", auth_views.LogoutView.as_view(), name="logout"),
+    path("accounts/logout/", views.SmartLogoutView.as_view(), name="logout"),
     # forgot password (the reset link is emailed; with no mail server set up it is printed in the terminal)
     path("accounts/password-reset/", auth_views.PasswordResetView.as_view(
         template_name="photopholio/password_reset_form.html", form_class=PasswordResetRequestForm,
@@ -56,6 +56,15 @@ urlpatterns = [
         template_name="photopholio/password_reset_complete.html"), name="password_reset_complete"),
     path("accounts/profile/", views.profile, name="profile"),
     # bookings
+    path("notifications/", views.notification_list, name="notification_list"),
+    path("notifications/count/", views.notification_count, name="notification_count"),
+    path("notifications/read-all/", views.notification_read_all, name="notification_read_all"),
+    path("notifications/<int:pk>/open/", views.notification_open, name="notification_open"),
+    path("notifications/<int:pk>/toggle/", views.notification_toggle, name="notification_toggle"),
+    path("notifications/clear-all/", views.notification_clear_all, name="notification_clear_all"),
+    path("notifications/<int:pk>/clear/", views.notification_clear, name="notification_clear"),
+    path("notifications/<int:pk>/restore/", views.notification_restore, name="notification_restore"),
+    path("notifications/<int:pk>/delete/", views.notification_delete, name="notification_delete"),
     path("bookings/", views.my_bookings, name="my_bookings"),
     path("bookings/<int:pk>/cancel/", views.booking_cancel, name="booking_cancel"),
     path("saved/", views.my_favourites, name="my_favourites"),

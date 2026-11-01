@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#F6F8FA">
   <script>
     /* Pick the theme before the page paints, so a dark-mode visitor never sees a white flash.
        The saved choice wins; otherwise follow the device. Storage can be blocked, so it is wrapped. */
@@ -17,7 +18,7 @@
   <meta name="description" content="Search photographers by city, style and rating, view real portfolios and book your date online.">
   <link rel="icon" type="image/svg+xml" href="{% static 'photopholio/img/logo.svg' %}">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
   <link href="{% static 'photopholio/css/style.css' %}" rel="stylesheet">
@@ -29,13 +30,41 @@
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav" aria-controls="nav" aria-expanded="false" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button>
     <div class="collapse navbar-collapse" id="nav">
       <ul class="navbar-nav me-auto">
-        <li class="nav-item"><a class="nav-link" href="{% url 'photographer_list' %}">Photographers</a></li>
+        <li class="nav-item"><a class="nav-link" href="{% url 'photographer_list' %}">Find photographers</a></li>
+        <li class="nav-item"><a class="nav-link" href="{% url 'home' %}#how">How it works</a></li>
         <li class="nav-item"><a class="nav-link" href="{% url 'contact' %}">Contact</a></li>
         {% if not user.is_authenticated %}<li class="nav-item"><a class="nav-link" href="{% url 'register' %}?role=photographer">For photographers</a></li>{% endif %}
       </ul>
       <div class="d-flex align-items-center gap-2 mt-3 mt-lg-0">
       <button type="button" class="btn btn-outline-dark theme-toggle" id="themeToggle" aria-label="Switch to dark mode" title="Switch between light and dark mode"><i class="bi bi-moon-stars theme-moon" aria-hidden="true"></i><i class="bi bi-sun theme-sun" aria-hidden="true"></i></button>
       {% if user.is_authenticated %}
+        {% load notification_tags %}{% unread_notifications user as unread_n %}{% recent_notifications user 6 as recent_n %}
+        <div class="dropdown bell" id="bell" data-count-url="{% url 'notification_count' %}" data-list-url="{% url 'notification_list' %}">
+          <button class="btn btn-outline-dark bell-btn" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" aria-label="Notifications{% if unread_n %}, {{ unread_n }} unread{% endif %}" title="Notifications">
+            <i class="bi bi-bell" aria-hidden="true"></i><span class="bell-badge" id="bellBadge"{% if not unread_n %} hidden{% endif %}>{% if unread_n > 9 %}9+{% else %}{{ unread_n }}{% endif %}</span></button>
+          <div class="dropdown-menu dropdown-menu-end bell-menu">
+            <div class="bell-head"><strong>Notifications</strong>
+              <span class="bell-head-actions">
+              {% if unread_n %}<form method="post" action="{% url 'notification_read_all' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn btn-link btn-sm p-0" type="submit">Mark all read</button></form>{% endif %}
+              {% if recent_n %}<form method="post" action="{% url 'notification_clear_all' %}" data-clear="all">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn btn-link btn-sm p-0" type="submit">Clear all</button></form>{% endif %}
+              </span></div>
+            <div class="bell-list">
+              {% for n in recent_n %}
+              <div class="bell-row">
+              <a class="bell-item{% if not n.is_read %} unread{% endif %}" href="{% url 'notification_open' n.pk %}">
+                <span class="bell-ico k-{{ n.kind }}"><i class="bi {% if n.kind == 'payment' %}bi-wallet2{% elif n.kind == 'review' %}bi-star{% elif n.kind == 'photos' %}bi-images{% elif n.kind == 'profile' %}bi-person-check{% elif n.kind == 'alert' %}bi-exclamation-circle{% elif n.kind == 'welcome' %}bi-emoji-smile{% elif n.kind == 'new' %}bi-camera{% else %}bi-calendar-check{% endif %}" aria-hidden="true"></i></span>
+                <span class="bell-txt"><span class="bell-title">{{ n.title }}</span><span class="bell-body">{{ n.body|truncatechars:90 }}</span><span class="bell-time">{{ n.created_at|timesince }} ago</span></span>
+                {% if not n.is_read %}<span class="bell-dot" aria-label="Unread"></span>{% endif %}
+              </a>
+              <form method="post" action="{% url 'notification_clear' n.pk %}" data-clear="one">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="bell-x" type="submit" title="Clear" aria-label="Clear this notification"><i class="bi bi-x-lg" aria-hidden="true"></i></button></form>
+              </div>
+              {% empty %}
+              <div class="bell-empty"><i class="bi bi-bell-slash" aria-hidden="true"></i><span>You are all caught up.</span><a href="{% url 'notification_list' %}?filter=cleared">View cleared</a></div>
+              {% endfor %}
+            </div>
+            <a class="bell-foot" href="{% url 'notification_list' %}">See all notifications</a>
+          </div>
+        </div>
         <div class="dropdown">
           <button class="btn btn-outline-dark dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-person-circle"></i> {{ user.first_name|default:user.username }}</button>
           <ul class="dropdown-menu dropdown-menu-end">
@@ -68,13 +97,20 @@
   </div>
 </nav>
 
-{% if messages %}
-<div class="container mt-3" role="status">
+<div class="toast-host" id="toastHost" aria-live="polite" aria-atomic="false">
   {% for m in messages %}
-  <div class="alert alert-{% if m.tags == 'error' %}danger{% else %}{{ m.tags|default:'info' }}{% endif %} alert-dismissible fade show" role="alert">{{ m }}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>
+  {% with t=m.tags %}
+  <div class="toast pp-toast t-{% if 'neutral' in t %}neutral{% elif 'money' in t %}money{% elif 'accepted' in t %}accepted{% elif 'error' in t %}danger{% elif 'warning' in t %}warning{% elif 'info' in t %}info{% else %}success{% endif %}" role="{% if 'error' in t %}alert{% else %}status{% endif %}" data-bs-delay="{% if 'error' in t or 'warning' in t %}9000{% else %}5500{% endif %}">
+    <div class="toast-body">
+      <i class="bi {% if 'neutral' in t %}bi-box-arrow-right{% elif 'money' in t %}bi-wallet2{% elif 'accepted' in t %}bi-patch-check-fill{% elif 'error' in t %}bi-x-octagon-fill{% elif 'warning' in t %}bi-exclamation-triangle-fill{% elif 'info' in t %}bi-info-circle-fill{% else %}bi-check-circle-fill{% endif %} pp-toast-ico" aria-hidden="true"></i>
+      <span class="pp-toast-msg">{{ m }}</span>
+      <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+    <div class="pp-toast-bar"></div>
+  </div>
+  {% endwith %}
   {% endfor %}
 </div>
-{% endif %}
 
 <main>{% block content %}{% endblock %}</main>
 

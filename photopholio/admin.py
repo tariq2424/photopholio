@@ -157,6 +157,9 @@ class PhotographerAdmin(admin.ModelAdmin):
             if obj.status == "approved":
                 obj.rejection_reason = ""
         super().save_model(request, obj, form, change)
+        if not change and obj.status == "approved":
+            from . import notifications
+            notifications.announce_new_photographer(obj)
         if change and "status" in form.changed_data:
             if obj.status == "approved":
                 emails.profile_approved(obj)

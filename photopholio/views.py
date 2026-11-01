@@ -3,7 +3,7 @@ from datetime import date
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login
-from django.contrib.auth.views import LoginView
+from django.contrib.auth.views import LoginView, LogoutView
 from django.http import Http404, JsonResponse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.urls import reverse
@@ -21,7 +21,7 @@ from .booking_flow import FlowError
 from .forms import (BlockDatesForm, BookingForm, CancelReasonForm, PackageForm, ContactForm, FeedbackForm, PaymentForm,
                     PhotoUploadForm, PhotographerProfileForm, PortfolioForm, RescheduleForm, ReplyForm,
                     ProfileForm, RegisterForm, ReportProblemForm, SmartLoginForm, TravelPolicyForm)
-from .models import (BlockedDate, Booking, City, Feedback, Package, Payment, Photo, Photographer,
+from .models import (Notification, BlockedDate, Booking, City, Feedback, Package, Payment, Photo, Photographer,
                      Portfolio, RescheduleRequest, State, UserProfile)
 from .roles import get_role, photographer_required
 
@@ -136,7 +136,7 @@ def photographer_detail(request, slug):
             booking.photographer = photographer
             booking.save()
             emails.booking_requested(booking)
-            messages.success(request, f"Request sent to {photographer.name}. You can pay once they accept it.")
+            messages.success(request, f"Request sent to {photographer.name}. You can pay once they accept it.", extra_tags="info")
             return redirect("my_bookings")
 
     context = {
@@ -197,10 +197,12 @@ def register(request):
         # Only the username is remembered, and only for the next login page: never the password.
         request.session["just_registered"] = user.username
         if form.cleaned_data["role"] == "photographer":
-            messages.success(request, f"Welcome, {user.first_name}! Your photographer account is created. Please log in to set up your profile.")
+            messages.success(request, f"Welcome, {user.first_name}! Your photographer account is created. Please log in to set up your profile.", extra_tags="info")
             return redirect("pro_login")
-        messages.success(request, f"Welcome, {user.first_name}! Your account is created. Please log in to continue.")
+        messages.success(request, f"Welcome, {user.first_name}! Your account is created. Please log in to continue.", extra_tags="info")
         return redirect("login")
+    if request.method == "POST":
+        messages.error(request, "Your account was not created. Please fix the highlighted fields and try again.")
     return render(request, "photopholio/register.html", {"form": form})
 
 
@@ -287,11 +289,11 @@ def booking_cancel(request, pk):
             messages.error(request, str(e))
             return redirect("my_bookings")
         if paid and refund:
-            messages.info(request, f"Booking cancelled. A refund of Rs.{refund} is pending.")
+            messages.error(request, f"Booking cancelled. A refund of Rs.{refund} is pending.")
         elif paid:
-            messages.info(request, "Booking cancelled. Under the policy this cancellation gets no refund.")
+            messages.error(request, "Booking cancelled. Under the policy this cancellation gets no refund.")
         else:
-            messages.info(request, "Booking cancelled. Nothing was charged.")
+            messages.error(request, "Booking cancelled. Nothing was charged.")
         return redirect("my_bookings")
     context = {
         "booking": booking, "paid": paid,
@@ -339,7 +341,7 @@ def payment(request, pk):
     booking_flow.expire_stale()
     booking = get_object_or_404(Booking.objects.select_related("photographer"), pk=pk, user=request.user)
     if booking.status == "pending":
-        messages.info(request, f"{booking.photographer.name} has not accepted this request yet. You can pay once they do.")
+        messages.warning(request, f"{booking.photographer.name} has not accepted this request yet. You can pay once they do.")
         return redirect("my_bookings")
     if booking.status != "accepted" or booking.is_paid:
         messages.info(request, "Nothing to pay for this booking.")
@@ -355,8 +357,10 @@ def payment(request, pk):
         booking.save(update_fields=["status"])
         money.on_paid(booking)  # work out the commission and start holding the money
         emails.payment_received(booking, paid)
-        messages.success(request, "Payment received. Your booking is confirmed.")
+        messages.success(request, "Payment received. Your booking is confirmed.", extra_tags="money")
         return redirect("my_bookings")
+    if request.method == "POST":
+        messages.error(request, "Payment failed. Nothing was charged. Please check the details and try again.")
     return render(request, "photopholio/payment.html", {"booking": booking, "form": form, "policy_rows": policy.rows()})
 
 
@@ -390,6 +394,13 @@ def contact(request):
 
 # --- Photographer area ---------------------------------------------------------
 
+class SmartLogoutView(LogoutView):
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        messages.info(request, "You have been logged out.", extra_tags="neutral")
+        return response
+
+
 class SmartLoginView(LoginView):
     """
     The only login view. Customers and photographers sign in here (also reachable at /photographer/login/).
@@ -414,6 +425,16 @@ class SmartLoginView(LoginView):
             form.fields["username"].widget.attrs.pop("autofocus", None)
             form.fields["password"].widget.attrs["autofocus"] = True  # the next thing to type is the password
         return form
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        messages.success(self.request, f"Welcome back, {self.request.user.first_name or self.request.user.username}.")
+        return response
+
+    def form_invalid(self, form):
+        errors = form.non_field_errors()
+        messages.error(self.request, str(errors[0]) if errors else "Login failed. Please check your username and password.")
+        return super().form_invalid(form)
 
     def get_default_redirect_url(self):
         if get_role(self.request.user) == "photographer":
@@ -500,9 +521,14 @@ def pro_portfolio(request):
                 messages.success(request, "Photo added.")
                 return redirect("pro_portfolio")
 
+    portfolios = list(ph.portfolios.prefetch_related("photos"))
+    for pf in portfolios:
+        pf.n = sum(1 for x in pf.photos.all() if x.status == "published")
+        pf.need = max(ph.MIN_PHOTOS - pf.n, 0)
     context = {
         "ph": ph,
-        "portfolios": ph.portfolios.prefetch_related("photos"),
+        "portfolios": portfolios,
+        "min_photos": ph.MIN_PHOTOS,
         "portfolio_form": portfolio_form,
         "photo_form": photo_form,
         "photo_count": ph.published_photo_count(),
@@ -564,7 +590,7 @@ def pro_booking_action(request, pk, action):
             "complete": "Marked as completed. The customer will be asked to confirm, and your payout is released after that."}
     try:
         handlers[action](booking)
-        messages.success(request, done[action])
+        messages.success(request, done[action], extra_tags="accepted" if action == "accept" else "")
     except FlowError as e:
         messages.error(request, str(e))
     return redirect("pro_dashboard")
@@ -701,7 +727,7 @@ def pro_booking_cancel(request, pk):
     if request.method == "POST" and form.is_valid():
         try:
             booking_flow.cancel_by_photographer(booking, form.cleaned_data["reason"])
-            messages.info(request, "Booking cancelled. The customer is refunded in full and the cancellation is recorded.")
+            messages.error(request, "Booking cancelled. The customer is refunded in full and the cancellation is recorded.")
             return redirect("pro_dashboard")
         except FlowError as e:
             messages.error(request, str(e))
@@ -796,3 +822,110 @@ def pro_packages(request):
     rows = [{"tier": tier, "label": dict(Package.TIER_CHOICES)[tier], "form": forms_by_tier[tier], "package": existing.get(tier)}
             for tier in tiers]
     return render(request, "photopholio/pro_packages.html", {"ph": ph, "rows": rows})
+
+
+# ---------------------------------------------------------------- notifications
+
+@login_required
+def notification_list(request):
+    qs = Notification.objects.filter(user=request.user)
+    mode = request.GET.get("filter")
+    only_unread, only_cleared = mode == "unread", mode == "cleared"
+    if only_unread:
+        qs = qs.filter(is_read=False)
+    elif only_cleared:
+        qs = qs.filter(cleared=True)
+    page = Paginator(qs, 20).get_page(request.GET.get("page"))
+    return render(request, "photopholio/notifications.html", {
+        "page": page, "only_unread": only_unread, "only_cleared": only_cleared,
+        "can_clear": Notification.objects.filter(user=request.user, cleared=False).exists(),
+        "unread": Notification.objects.filter(user=request.user, is_read=False).count()})
+
+
+@login_required
+def notification_open(request, pk):
+    """Mark one notification as read, then go to the page it is about."""
+    item = get_object_or_404(Notification, pk=pk, user=request.user)
+    if not item.is_read:
+        item.is_read = True
+        item.save(update_fields=["is_read"])
+    target = item.url or reverse("notification_list")
+    if not url_has_allowed_host_and_scheme(target, allowed_hosts={request.get_host()}):
+        target = reverse("notification_list")
+    return redirect(target)
+
+
+@login_required
+@require_POST
+def notification_toggle(request, pk):
+    item = get_object_or_404(Notification, pk=pk, user=request.user)
+    item.is_read = not item.is_read
+    item.save(update_fields=["is_read"])
+    return redirect(_back(request))
+
+
+@login_required
+@require_POST
+def notification_read_all(request):
+    Notification.objects.filter(user=request.user, is_read=False).update(is_read=True)
+    messages.success(request, "All notifications marked as read.")
+    return redirect(_back(request))
+
+
+@login_required
+@require_POST
+def notification_delete(request, pk):
+    get_object_or_404(Notification, pk=pk, user=request.user).delete()
+    return redirect(_back(request))
+
+
+def _wants_json(request):
+    return request.headers.get("X-Requested-With") == "fetch"
+
+
+def _bell_state(user):
+    mine = Notification.objects.filter(user=user)
+    return JsonResponse({"ok": True, "unread": mine.filter(is_read=False).count(),
+                         "remaining": mine.filter(cleared=False).count()})
+
+
+@login_required
+@require_POST
+def notification_clear(request, pk):
+    """Take one notification out of the bell. It stays in the history on the notifications page."""
+    item = get_object_or_404(Notification, pk=pk, user=request.user)
+    item.cleared, item.is_read = True, True
+    item.save(update_fields=["cleared", "is_read"])
+    return _bell_state(request.user) if _wants_json(request) else redirect(_back(request))
+
+
+@login_required
+@require_POST
+def notification_clear_all(request):
+    Notification.objects.filter(user=request.user, cleared=False).update(cleared=True, is_read=True)
+    if _wants_json(request):
+        return _bell_state(request.user)
+    messages.success(request, "Notifications cleared. You can still find them under \u201cCleared\u201d on the notifications page.")
+    return redirect(_back(request))
+
+
+@login_required
+@require_POST
+def notification_restore(request, pk):
+    item = get_object_or_404(Notification, pk=pk, user=request.user)
+    item.cleared = False
+    item.save(update_fields=["cleared"])
+    return redirect(_back(request))
+
+
+@login_required
+def notification_count(request):
+    """Used by the bell to refresh the unread number without reloading the page."""
+    return JsonResponse({"unread": Notification.objects.filter(user=request.user, is_read=False).count()})
+
+
+def _back(request):
+    target = request.POST.get("next") or reverse("notification_list")
+    if not url_has_allowed_host_and_scheme(target, allowed_hosts={request.get_host()}):
+        target = reverse("notification_list")
+    return target

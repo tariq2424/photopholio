@@ -16,7 +16,7 @@ from django.utils import timezone
 from . import analytics, availability, booking_flow, emails, favourites, money, policy, reviews, throttle, tracking, travel
 from .forms import RegisterForm
 from .models import (Booking, City, Country, Feedback, BlockedDate, LoginAttempt, Package, Payment, Photo, Photographer, Portfolio,
-                     Favourite, RescheduleRequest, ShootDay, ShootEvent, State, UserProfile)
+                     Favourite, Notification, RescheduleRequest, ShootDay, ShootEvent, State, UserProfile)
 
 
 def EVENT(**kw):
@@ -256,6 +256,43 @@ class PhotographerAccountTests(TestCase):
         self.client.post(reverse("pro_submit"))
         ph.refresh_from_db()
         self.assertEqual(ph.status, "pending")
+
+    def test_every_portfolio_needs_four_photos_to_submit(self):
+        ph = self.draft()
+        for i in range(4):  # the tester's trick: four portfolios with one photo each
+            pf = Portfolio.objects.create(photographer=ph, title=f"Album {i}")
+            Photo.objects.create(portfolio=pf, image=make_image(f"s{i}.jpg"), order_id=1)
+        self.assertEqual(ph.published_photo_count(), 4)
+        self.assertEqual(len(ph.portfolio_gaps()), 4)
+        self.client.login(username="pro", password="pass12345")
+        self.client.post(reverse("pro_submit"))
+        ph.refresh_from_db()
+        self.assertEqual(ph.status, "draft")
+
+    def test_one_short_portfolio_still_blocks_submit(self):
+        ph = self.draft()
+        self.add_photos(ph, 4)
+        thin = Portfolio.objects.create(photographer=ph, title="Thin")
+        Photo.objects.create(portfolio=thin, image=make_image("t.jpg"), order_id=1)
+        self.client.login(username="pro", password="pass12345")
+        self.client.post(reverse("pro_submit"))
+        ph.refresh_from_db()
+        self.assertEqual(ph.status, "draft")
+        for i in range(3):
+            Photo.objects.create(portfolio=thin, image=make_image(f"t{i}.jpg"), order_id=i + 2)
+        self.client.post(reverse("pro_submit"))
+        ph.refresh_from_db()
+        self.assertEqual(ph.status, "pending")
+
+    def test_hidden_photos_do_not_count_and_portfolio_page_shows_progress(self):
+        ph = self.draft()
+        pf = self.add_photos(ph, 4)
+        pf.photos.filter(order_id=1).update(status="hidden")
+        self.assertFalse(ph.ready_for_review)
+        self.client.login(username="pro", password="pass12345")
+        resp = self.client.get(reverse("pro_portfolio"))
+        self.assertContains(resp, "3 of 4 photos")
+        self.assertContains(resp, "add 1 more")
 
     def test_photo_upload_and_ownership(self):
         ph = self.draft()
@@ -3100,7 +3137,7 @@ class DarkModeAndSiteUrlTests(TestCase):
         from django.conf import settings
         css = (settings.BASE_DIR / "photopholio" / "static" / "photopholio" / "css" / "style.css").read_text()
         self.assertIn('[data-bs-theme="dark"]', css)
-        self.assertTrue(css.startswith(":root{"))  # the original light variables still come first
+        self.assertLess(css.index(":root{"), css.index('[data-bs-theme="dark"]'))  # light variables come first, dark overrides after
 
     def test_site_url_falls_back_to_the_render_address(self):
         import json, os, subprocess, sys
@@ -3116,3 +3153,380 @@ class DarkModeAndSiteUrlTests(TestCase):
         self.assertEqual(run({}), "http://127.0.0.1:8000")
         self.assertEqual(run({"RENDER_EXTERNAL_URL": "https://site.onrender.com/"}), "https://site.onrender.com")
         self.assertEqual(run({"SITE_URL": "https://mine.example/", "RENDER_EXTERNAL_URL": "https://site.onrender.com"}), "https://mine.example")
+
+
+
+class InAppNotificationTests(TestCase):
+    """Every email to a signed-up person also lands in the bell."""
+
+    def setUp(self):
+        country = Country.objects.create(name="India")
+        state = State.objects.create(country=country, name="Gujarat")
+        city = City.objects.create(state=state, name="Vadodara")
+        self.pro_user = User.objects.create_user("pro", password="pass12345", first_name="Pro", email="pro@example.com")
+        UserProfile.objects.create(user=self.pro_user, role="photographer")
+        self.ph = Photographer.objects.create(name="Mail Snap", bio="bio", specialities="wedding", city=city,
+                                              price_per_day=8000, user=self.pro_user)
+        self.cust = User.objects.create_user("cust", password="pass12345", first_name="Cust", email="cust@example.com")
+        self.cust2 = User.objects.create_user("cust2", password="pass12345", first_name="Other", email="cust2@example.com")
+        self.admin = User.objects.create_superuser("boss", "boss@example.com", "pass12345")
+        self.today = timezone.localdate()
+        for u in (self.cust, self.cust2, self.pro_user, self.admin):  # welcome notes are tested separately
+            Notification.objects.create(user=u, kind="welcome", title="Welcome", is_read=True)
+
+    def mine(self, user):
+        return Notification.objects.filter(user=user).exclude(kind="welcome")
+
+    def booking(self, days=10, status="pending", user=None, paid=False):
+        b = Booking.objects.create(user=user or self.cust, photographer=self.ph,
+                                   event_date=self.today + timedelta(days=days), status=status)
+        if status == "accepted":
+            Booking.objects.filter(pk=b.pk).update(accepted_at=timezone.now())
+            b.refresh_from_db()
+        if paid:
+            Payment.objects.create(user=b.user, booking=b, amount=8000, payment_method="upi", status="completed")
+        return b
+
+    def test_request_notifies_both_sides(self):
+        self.client.login(username="cust", password="pass12345")
+        date = (self.today + timedelta(days=12)).isoformat()
+        self.client.post(reverse("photographer_detail", args=[self.ph.slug]), {**EVENT(), "event_date": date})
+        self.assertEqual(self.mine(self.cust).count(), 1)
+        pro = self.mine(self.pro_user).get()
+        self.assertEqual(pro.title, "You have a new booking request")
+        self.assertEqual(pro.url, "/photographer/dashboard/")
+        self.assertFalse(pro.is_read)
+
+    def test_accept_gives_customer_a_pay_link_and_payment_kind_for_refunds(self):
+        b = self.booking()
+        booking_flow.accept(b)
+        n = self.mine(self.cust).get()
+        self.assertEqual(n.url, f"/bookings/{b.pk}/pay/")
+        self.assertEqual(emails.__name__, "photopholio.emails")
+        from . import notifications
+        self.assertEqual(notifications.kind_for("Your refund has been processed"), "payment")
+        self.assertEqual(notifications.kind_for("Your photos from X are ready"), "photos")
+
+    def test_notification_works_even_without_an_email_address(self):
+        User.objects.filter(pk=self.cust.pk).update(email="")
+        self.cust.refresh_from_db()
+        booking_flow.accept(self.booking())
+        self.assertEqual(self.mine(self.cust).count(), 1)
+
+    def test_bell_shows_unread_count_and_marks_read_on_open(self):
+        booking_flow.accept(self.booking())
+        self.client.login(username="cust", password="pass12345")
+        resp = self.client.get(reverse("home"))
+        self.assertContains(resp, 'id="bellBadge"')
+        self.assertEqual(self.client.get(reverse("notification_count")).json(), {"unread": 1})
+        n = self.mine(self.cust).get()
+        resp = self.client.get(reverse("notification_open", args=[n.pk]))
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(resp["Location"].endswith("/pay/"))
+        n.refresh_from_db()
+        self.assertTrue(n.is_read)
+        self.assertEqual(self.client.get(reverse("notification_count")).json(), {"unread": 0})
+
+    def test_mark_all_read_toggle_and_delete(self):
+        b1 = self.booking(10)
+        booking_flow.accept(b1)
+        booking_flow.decline(self.booking(20))
+        self.client.login(username="cust", password="pass12345")
+        self.assertEqual(self.mine(self.cust).filter(is_read=False).count(), 2)
+        first = self.mine(self.cust).first()
+        self.client.post(reverse("notification_toggle", args=[first.pk]))
+        first.refresh_from_db()
+        self.assertTrue(first.is_read)
+        self.client.post(reverse("notification_toggle", args=[first.pk]))
+        first.refresh_from_db()
+        self.assertFalse(first.is_read)
+        self.client.post(reverse("notification_read_all"))
+        self.assertEqual(self.mine(self.cust).filter(is_read=False).count(), 0)
+        self.client.post(reverse("notification_delete", args=[first.pk]))
+        self.assertEqual(self.mine(self.cust).count(), 1)
+
+    def test_nobody_can_touch_someone_elses_notifications(self):
+        booking_flow.accept(self.booking())
+        n = self.mine(self.cust).get()
+        self.client.login(username="cust2", password="pass12345")
+        self.assertEqual(self.client.get(reverse("notification_open", args=[n.pk])).status_code, 404)
+        self.assertEqual(self.client.post(reverse("notification_delete", args=[n.pk])).status_code, 404)
+        self.assertNotContains(self.client.get(reverse("notification_list")), "your request was accepted")
+        self.client.logout()
+        self.assertEqual(self.client.get(reverse("notification_list")).status_code, 302)
+
+    def test_list_page_filters_unread(self):
+        booking_flow.accept(self.booking())
+        self.mine(self.cust).update(is_read=True)
+        self.client.login(username="cust", password="pass12345")
+        self.assertContains(self.client.get(reverse("notification_list")), "your request was accepted")
+        self.assertContains(self.client.get(reverse("notification_list") + "?filter=unread"), "Nothing unread")
+
+    def test_notify_failure_never_breaks_the_flow(self):
+        with patch("photopholio.notifications.Notification.objects.create", side_effect=RuntimeError("db down")):
+            booking_flow.accept(self.booking())
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_only_latest_hundred_are_kept(self):
+        from . import notifications
+        for i in range(105):
+            notifications.notify(self.cust, f"n{i}")
+        self.assertEqual(self.mine(self.cust).count(), notifications.KEEP_PER_USER)
+
+    def test_messages_render_as_toasts_with_the_right_type(self):
+        self.client.login(username="cust", password="pass12345")
+        self.client.post(reverse("notification_read_all"))
+        resp = self.client.get(reverse("notification_list"), follow=True)
+        self.assertContains(resp, "pp-toast t-success")
+        self.assertContains(resp, "All notifications marked as read.")
+
+
+class WelcomeAndNewPhotographerTests(TestCase):
+    def setUp(self):
+        country = Country.objects.create(name="India")
+        state = State.objects.create(country=country, name="Gujarat")
+        self.city = City.objects.create(state=state, name="Vadodara")
+        self.cust = User.objects.create_user("cust", password="pass12345", first_name="Asha", email="a@example.com")
+        UserProfile.objects.create(user=self.cust, role="customer")
+        self.cust2 = User.objects.create_user("cust2", password="pass12345", email="b@example.com")
+        self.pro_user = User.objects.create_user("pro", password="pass12345", email="p@example.com")
+        UserProfile.objects.create(user=self.pro_user, role="photographer")
+
+    def test_first_login_gets_one_welcome_only(self):
+        self.client.login(username="cust", password="pass12345")
+        self.client.logout()
+        self.client.login(username="cust", password="pass12345")
+        n = Notification.objects.get(user=self.cust, kind="welcome")
+        self.assertIn("Asha", n.title)
+        self.assertEqual(n.url, reverse("photographer_list"))
+
+    def welcome_for(self, status=None):
+        if status:
+            Photographer.objects.create(name="Pro Snap", bio="b", specialities="event", city=self.city,
+                                        user=self.pro_user, status=status)
+        self.client.login(username="pro", password="pass12345")
+        return Notification.objects.get(user=self.pro_user, kind="welcome")
+
+    def test_new_photographer_without_profile_gets_setup_steps(self):
+        n = self.welcome_for()
+        self.assertEqual(n.url, reverse("pro_profile"))
+        self.assertIn("at least 4 photos", n.body)
+
+    def test_photographer_still_in_draft_gets_checklist_hint(self):
+        n = self.welcome_for("draft")
+        self.assertEqual(n.url, reverse("pro_dashboard"))
+        self.assertIn("4 photos", n.body)
+
+    def test_photographer_with_finished_profile_is_only_greeted(self):
+        for status in ("pending", "approved", "rejected"):
+            Notification.objects.all().delete()
+            Photographer.objects.filter(user=self.pro_user).delete()
+            n = self.welcome_for(status)
+            self.assertIn("Welcome to PhotoPholio", n.title)
+            self.assertNotIn("creating your profile", n.body)
+            self.assertNotIn("add at least 4 photos", n.body)
+            self.client.logout()
+
+    def test_setup_steps_are_not_repeated_on_later_logins(self):
+        self.welcome_for()
+        for _ in range(3):
+            self.client.logout()
+            self.client.login(username="pro", password="pass12345")
+        self.assertEqual(Notification.objects.filter(user=self.pro_user).count(), 1)
+
+    def test_register_then_first_login_gives_welcome(self):
+        self.client.post(reverse("register"), {
+            "role": "customer", "first_name": "Fresh", "username": "fresh",
+            "email": "f@example.com", "password1": "Str0ng-pass-99", "password2": "Str0ng-pass-99"})
+        u = User.objects.get(username="fresh")
+        self.assertFalse(Notification.objects.filter(user=u).exists())  # registering alone does not log in
+        self.client.post(reverse("login"), {"username": "fresh", "password": "Str0ng-pass-99"})
+        self.assertEqual(Notification.objects.filter(user=u, kind="welcome").count(), 1)
+
+    def test_approving_a_photographer_tells_everyone_else_once(self):
+        ph = Photographer.objects.create(name="New Lens", bio="b", specialities="event", city=self.city,
+                                         user=self.pro_user, status="pending")
+        Photographer.objects.filter(pk=ph.pk).update(status="approved")
+        ph.refresh_from_db()
+        emails.profile_approved(ph)
+        emails.profile_approved(ph)  # a second call must not repeat it
+        got = Notification.objects.filter(kind="new")
+        self.assertEqual(got.count(), 2)
+        self.assertEqual(set(got.values_list("user__username", flat=True)), {"cust", "cust2"})
+        n = got.first()
+        self.assertIn("New Lens", n.title)
+        self.assertEqual(n.url, reverse("photographer_detail", args=[ph.slug]))
+
+    def test_admin_adding_an_approved_photographer_announces_too(self):
+        from django.contrib.admin.sites import site
+        from photopholio.admin import PhotographerAdmin
+        ph = Photographer(name="Admin Added", bio="b", specialities="event", city=self.city, status="approved")
+        ph.save()
+        admin_obj = PhotographerAdmin(Photographer, site)
+        req = type("R", (), {"user": self.cust})()
+        admin_obj.save_model(req, ph, type("F", (), {"changed_data": []})(), False)
+        self.assertEqual(Notification.objects.filter(kind="new").count(), User.objects.count())
+
+    def test_draft_or_pending_photographers_are_not_announced(self):
+        Photographer.objects.create(name="Not Yet", bio="b", specialities="event", city=self.city, status="pending")
+        self.assertFalse(Notification.objects.filter(kind="new").exists())
+
+
+class AccountToastTests(TestCase):
+    def setUp(self):
+        self.u = User.objects.create_user("amit", password="pass12345", first_name="Amit", email="a@example.com")
+        UserProfile.objects.create(user=self.u, role="customer")
+
+    def test_login_success_shows_welcome_back_toast(self):
+        resp = self.client.post(reverse("login"), {"username": "amit", "password": "pass12345"}, follow=True)
+        self.assertContains(resp, "pp-toast t-success")
+        self.assertContains(resp, "Welcome back, Amit.")
+
+    def test_wrong_password_shows_error_toast(self):
+        resp = self.client.post(reverse("login"), {"username": "amit", "password": "nope"})
+        self.assertContains(resp, "pp-toast t-danger")
+
+    def test_bad_registration_shows_error_toast(self):
+        resp = self.client.post(reverse("register"), {"role": "customer", "username": "x", "password1": "a", "password2": "b"})
+        self.assertContains(resp, "pp-toast t-danger")
+        self.assertContains(resp, "Your account was not created")
+        self.assertFalse(User.objects.filter(username="x").exists())
+
+    def test_logout_shows_toast(self):
+        self.client.login(username="amit", password="pass12345")
+        resp = self.client.post(reverse("logout"), follow=True)
+        self.assertContains(resp, "You have been logged out.")
+        self.assertContains(resp, "pp-toast t-neutral")
+
+
+class ToastColourTests(TestCase):
+
+    def setUp(self):
+        country = Country.objects.create(name="India")
+        state = State.objects.create(country=country, name="Gujarat")
+        city = City.objects.create(state=state, name="Vadodara")
+        self.pro_user = User.objects.create_user("pro", password="pass12345", first_name="Pro", email="pro@example.com")
+        UserProfile.objects.create(user=self.pro_user, role="photographer")
+        self.ph = Photographer.objects.create(name="Mail Snap", bio="bio", specialities="wedding", city=city,
+                                              price_per_day=8000, user=self.pro_user)
+        self.cust = User.objects.create_user("cust", password="pass12345", first_name="Cust", email="cust@example.com")
+        self.cust2 = User.objects.create_user("cust2", password="pass12345", first_name="Other", email="cust2@example.com")
+        self.admin = User.objects.create_superuser("boss", "boss@example.com", "pass12345")
+        self.today = timezone.localdate()
+
+    def booking(self, days=10, status="pending", user=None, paid=False):
+        b = Booking.objects.create(user=user or self.cust, photographer=self.ph,
+                                   event_date=self.today + timedelta(days=days), status=status)
+        if status == "accepted":
+            Booking.objects.filter(pk=b.pk).update(accepted_at=timezone.now())
+            b.refresh_from_db()
+        if paid:
+            Payment.objects.create(user=b.user, booking=b, amount=8000, payment_method="upi", status="completed")
+        return b
+
+    def toast(self, resp, kind):
+        self.assertContains(resp, f"pp-toast t-{kind}")
+
+    def test_registration_success_is_blue(self):
+        resp = self.client.post(reverse("register"), {
+            "role": "customer", "first_name": "Fresh", "username": "fresh",
+            "email": "f@example.com", "password1": "Str0ng-pass-99", "password2": "Str0ng-pass-99"}, follow=True)
+        self.toast(resp, "info")
+
+    def test_login_green_and_logout_slate(self):
+        resp = self.client.post(reverse("login"), {"username": "cust", "password": "pass12345"}, follow=True)
+        self.toast(resp, "success")
+        self.toast(self.client.post(reverse("logout"), follow=True), "neutral")
+
+    def test_request_sent_blue_accepted_purple_unpaid_amber(self):
+        self.client.login(username="cust", password="pass12345")
+        date = (self.today + timedelta(days=12)).isoformat()
+        resp = self.client.post(reverse("photographer_detail", args=[self.ph.slug]), {**EVENT(), "event_date": date}, follow=True)
+        self.toast(resp, "info")
+        b = Booking.objects.get(user=self.cust)
+        self.toast(self.client.get(reverse("payment", args=[b.pk]), follow=True), "warning")  # still pending
+        self.client.logout()
+        self.client.login(username="pro", password="pass12345")
+        resp = self.client.post(reverse("pro_booking_action", args=[b.pk, "accept"]), follow=True)
+        self.toast(resp, "accepted")
+
+    def test_payment_teal_failure_red_cancel_red(self):
+        b = self.booking(status="accepted")
+        self.client.login(username="cust", password="pass12345")
+        self.toast(self.client.post(reverse("payment", args=[b.pk]), {"payment_method": "bogus"}), "danger")
+        self.toast(self.client.post(reverse("payment", args=[b.pk]), {"payment_method": "upi"}, follow=True), "money")
+        self.toast(self.client.post(reverse("booking_cancel", args=[b.pk]), follow=True), "danger")
+
+    def test_every_colour_is_defined_in_the_stylesheet(self):
+        import pathlib
+        css = (pathlib.Path(__file__).parent / "static/photopholio/css/style.css").read_text()
+        for cls, hexcode in {"success": "#16A34A", "danger": "#DC2626", "info": "#2563EB", "warning": "#D97706",
+                             "accepted": "#7C3AED", "money": "#0D9488", "neutral": "#475569"}.items():
+            self.assertIn(f".t-{cls}{{--tc:{hexcode}}}", css)
+
+
+class ClearNotificationTests(TestCase):
+    def setUp(self):
+        self.u = User.objects.create_user("amit", password="pass12345", first_name="Amit")
+        UserProfile.objects.create(user=self.u, role="customer")
+        self.v = User.objects.create_user("other", password="pass12345")
+        UserProfile.objects.create(user=self.v, role="customer")
+        from . import notifications
+        for i in range(3):
+            notifications.notify(self.u, f"Note {i}", "body", "/bookings/", "Booking")
+        self.client.login(username="amit", password="pass12345")
+        Notification.objects.filter(user=self.u, kind="welcome").delete()  # the login above made one
+        self.items = list(Notification.objects.filter(user=self.u))
+
+    def test_clear_one_hides_it_from_bell_but_keeps_history(self):
+        n = self.items[0]
+        self.client.post(reverse("notification_clear", args=[n.pk]))
+        n.refresh_from_db()
+        self.assertTrue(n.cleared)
+        self.assertTrue(n.is_read)
+        bell = self.client.get(reverse("home"))
+        self.assertNotContains(bell, f'/notifications/{n.pk}/open/')
+        page = self.client.get(reverse("notification_list"))
+        self.assertContains(page, n.title)
+        self.assertContains(page, "Cleared")
+
+    def test_clear_all_and_cleared_filter(self):
+        self.client.post(reverse("notification_clear_all"))
+        self.assertFalse(Notification.objects.filter(user=self.u, cleared=False).exists())
+        self.assertEqual(self.client.get(reverse("notification_count")).json(), {"unread": 0})
+        resp = self.client.get(reverse("notification_list") + "?filter=cleared")
+        for n in self.items:
+            self.assertContains(resp, n.title)
+        self.assertContains(self.client.get(reverse("home")), "You are all caught up.")
+
+    def test_restore_brings_it_back_to_the_bell(self):
+        n = self.items[0]
+        self.client.post(reverse("notification_clear", args=[n.pk]))
+        self.client.post(reverse("notification_restore", args=[n.pk]))
+        n.refresh_from_db()
+        self.assertFalse(n.cleared)
+        self.assertContains(self.client.get(reverse("home")), f'/notifications/{n.pk}/open/')
+
+    def test_ajax_clear_returns_new_counts(self):
+        n = self.items[0]
+        resp = self.client.post(reverse("notification_clear", args=[n.pk]), HTTP_X_REQUESTED_WITH="fetch")
+        self.assertEqual(resp.json(), {"ok": True, "unread": 2, "remaining": 2})
+        resp = self.client.post(reverse("notification_clear_all"), HTTP_X_REQUESTED_WITH="fetch")
+        self.assertEqual(resp.json(), {"ok": True, "unread": 0, "remaining": 0})
+
+    def test_clear_needs_post_and_own_notification(self):
+        n = self.items[0]
+        self.assertEqual(self.client.get(reverse("notification_clear", args=[n.pk])).status_code, 405)
+        self.client.logout()
+        self.client.login(username="other", password="pass12345")
+        self.assertEqual(self.client.post(reverse("notification_clear", args=[n.pk])).status_code, 404)
+        self.assertEqual(self.client.post(reverse("notification_restore", args=[n.pk])).status_code, 404)
+        n.refresh_from_db()
+        self.assertFalse(n.cleared)
+
+    def test_new_notification_after_clearing_shows_in_bell(self):
+        from . import notifications
+        self.client.post(reverse("notification_clear_all"))
+        fresh = notifications.notify(self.u, "Fresh one", "x", "/bookings/", "Booking")
+        self.assertContains(self.client.get(reverse("home")), f"/notifications/{fresh.pk}/open/")
+        self.assertEqual(self.client.get(reverse("notification_count")).json(), {"unread": 1})

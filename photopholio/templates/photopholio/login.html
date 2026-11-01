@@ -2,11 +2,16 @@
 {% block title %}Log in{% endblock %}
 {% block content %}
 <div class="container"><div class="auth">
-  <div>
+  <div class="auth-side">
     {% if login_role == 'photographer' %}<span class="chip" style="cursor:default">Photographers</span>{% endif %}
-    <h1 {% if login_role == 'photographer' %}class="mt-3"{% endif %} style="font-size:clamp(2.4rem,5vw,3.4rem)">Welcome back</h1>
+    <h1 {% if login_role == 'photographer' %}class="mt-3"{% endif %}>Welcome back</h1>
     <p class="muted measure mt-3">Customers and photographers log in here. Use your username or your email.
       After logging in you land on your own dashboard.</p>
+    <ul class="auth-points">
+      <li><i class="bi bi-calendar2-check" aria-hidden="true"></i><span><b>Follow your bookings</b>See every request, payment and shoot in one place.</span></li>
+      <li><i class="bi bi-bell" aria-hidden="true"></i><span><b>Never miss an update</b>The bell tells you when a photographer replies.</span></li>
+      <li><i class="bi bi-images" aria-hidden="true"></i><span><b>Get your photos</b>The delivery link shows up on your booking.</span></li>
+    </ul>
   </div>
   <div class="panel">
     <form method="post" id="login-form" novalidate>{% csrf_token %}
@@ -20,7 +25,6 @@
         <span id="lock-live" hidden>Please wait <b id="lock-time" aria-hidden="true"></b> before trying again, or use &ldquo;Forgot your password?&rdquo;.</span>
       </div>
       {% else %}
-      {% for e in form.non_field_errors %}<div class="alert alert-danger">{{ e }}</div>{% endfor %}
       {% endif %}
 
       {% for f in form %}

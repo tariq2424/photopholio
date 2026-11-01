@@ -39,7 +39,7 @@
 
     {% if ph.status != 'approved' %}
     <ul class="checklist list-unstyled mt-3 mb-3">
-      {% for label, ok in checklist %}<li>{% if ok %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<i class="bi bi-circle text-muted"></i>{% endif %} {{ label }}{% if forloop.last %} <span class="muted">({{ photo_count }} added)</span>{% endif %}</li>{% endfor %}
+      {% for label, ok in checklist %}<li>{% if ok %}<i class="bi bi-check-circle-fill text-success"></i>{% else %}<i class="bi bi-circle text-muted"></i>{% endif %} {{ label }}</li>{% endfor %}
     </ul>
     {% endif %}
 

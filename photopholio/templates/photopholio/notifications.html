@@ -1,0 +1,56 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}Notifications{% endblock %}
+{% block content %}
+<div class="container section" style="max-width:820px">
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+    <div>
+      <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-1">Notifications</h1>
+      <p class="muted mb-0">{% if unread %}You have <strong>{{ unread }}</strong> unread.{% else %}You are all caught up.{% endif %}</p>
+    </div>
+    <div class="d-flex gap-2 align-items-center">
+      <div class="seg" role="group" aria-label="Filter">
+        <a class="{% if not only_unread and not only_cleared %}on{% endif %}" href="{% url 'notification_list' %}">All</a>
+        <a class="{% if only_unread %}on{% endif %}" href="{% url 'notification_list' %}?filter=unread">Unread</a>
+        <a class="{% if only_cleared %}on{% endif %}" href="{% url 'notification_list' %}?filter=cleared">Cleared</a>
+      </div>
+      {% if unread %}<form method="post" action="{% url 'notification_read_all' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn btn-outline-dark btn-sm" type="submit"><i class="bi bi-check2-all"></i> Mark all read</button></form>{% endif %}
+      {% if can_clear %}<form method="post" action="{% url 'notification_clear_all' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn btn-outline-dark btn-sm" type="submit"><i class="bi bi-x-circle"></i> Clear all</button></form>{% endif %}
+    </div>
+  </div>
+
+  <div class="panel p-0 notif-list">
+    {% for n in page %}
+    <div class="notif-row{% if not n.is_read %} unread{% endif %}{% if n.cleared %} is-cleared{% endif %}">
+      <span class="bell-ico k-{{ n.kind }}"><i class="bi {% if n.kind == 'payment' %}bi-wallet2{% elif n.kind == 'review' %}bi-star{% elif n.kind == 'photos' %}bi-images{% elif n.kind == 'profile' %}bi-person-check{% elif n.kind == 'alert' %}bi-exclamation-circle{% elif n.kind == 'welcome' %}bi-emoji-smile{% elif n.kind == 'new' %}bi-camera{% else %}bi-calendar-check{% endif %}" aria-hidden="true"></i></span>
+      <a class="notif-main" href="{% url 'notification_open' n.pk %}">
+        <span class="bell-title">{{ n.title }}{% if not n.is_read %} <span class="badge-new">New</span>{% endif %}</span>
+        <span class="bell-body">{{ n.body }}</span>
+        <span class="bell-time">{{ n.get_kind_display }} &middot; {{ n.created_at|timesince }} ago{% if n.cleared %} &middot; Cleared{% endif %}</span>
+      </a>
+      <div class="notif-actions">
+        <form method="post" action="{% url 'notification_toggle' n.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button class="icon-btn" type="submit" title="{% if n.is_read %}Mark as unread{% else %}Mark as read{% endif %}" aria-label="{% if n.is_read %}Mark as unread{% else %}Mark as read{% endif %}"><i class="bi {% if n.is_read %}bi-envelope{% else %}bi-envelope-open{% endif %}"></i></button></form>
+        {% if n.cleared %}<form method="post" action="{% url 'notification_restore' n.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button class="icon-btn" type="submit" title="Show in the bell again" aria-label="Show in the bell again"><i class="bi bi-arrow-counterclockwise"></i></button></form>
+        {% else %}<form method="post" action="{% url 'notification_clear' n.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button class="icon-btn" type="submit" title="Clear from the bell" aria-label="Clear from the bell"><i class="bi bi-x-lg"></i></button></form>{% endif %}
+        <form method="post" action="{% url 'notification_delete' n.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button class="icon-btn" type="submit" title="Delete" aria-label="Delete notification"><i class="bi bi-trash3"></i></button></form>
+      </div>
+    </div>
+    {% empty %}
+    <div class="empty-state"><i class="bi bi-bell-slash" aria-hidden="true"></i>
+      <h3>{% if only_unread %}Nothing unread{% elif only_cleared %}Nothing cleared{% else %}No notifications yet{% endif %}</h3>
+      <p class="muted mb-0">Booking updates, payments and replies will show up here.</p></div>
+    {% endfor %}
+  </div>
+
+  {% if page.has_other_pages %}
+  <nav class="d-flex justify-content-between mt-3" aria-label="Pages">
+    {% if page.has_previous %}<a class="btn btn-outline-dark btn-sm" href="?page={{ page.previous_page_number }}{% if only_unread %}&filter=unread{% elif only_cleared %}&filter=cleared{% endif %}">&larr; Newer</a>{% else %}<span></span>{% endif %}
+    <span class="muted small align-self-center">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+    {% if page.has_next %}<a class="btn btn-outline-dark btn-sm" href="?page={{ page.next_page_number }}{% if only_unread %}&filter=unread{% elif only_cleared %}&filter=cleared{% endif %}">Older &rarr;</a>{% else %}<span></span>{% endif %}
+  </nav>
+  {% endif %}
+</div>
+{% endblock %}

@@ -49,6 +49,15 @@ book an event date, pay (demo checkout) and leave reviews. Built from my GTU sum
 
 - **Shoot tracking and disputes**: on the event day the photographer taps "I've arrived", "Start shoot" and "Finish today's shoot" (in order, once each, only on that date; multi-day events get one row per day). The customer is emailed on arrival and can tap "Yes, they are here". When the last day is finished the booking becomes completed and the customer is asked to confirm; the photographer's payout stays on hold until they confirm, 48 hours pass in silence (auto-confirm), or the admin decides. The customer can also report a problem (no-show, quality, other) from the first day until the payout is sent: the money is frozen and the admin sees it on the Disputes page, where they pay, refund in full, or dismiss, with a note both people receive. Every tap and decision is stored in an audit trail (`ShootEvent`) shown inside the booking in the admin. The taps are self-reported evidence, not GPS; checkout and payouts are a demo ledger.
 
+## UI and notifications (latest)
+- **New look ("Contact Sheet")**: ink and film black on a cool paper background with one red accent, white print-style cards with dashed cut lines, round icon buttons, Bricolage Grotesque + Instrument Sans fonts.
+- **Light / dark mode**: day-night switch in the navbar; the choice is remembered, follows the device by default, and the new theme grows out of the button as a circle (soft fade on older browsers).
+- **Toast messages**: every action (login, logout, booking, payment, review, errors) shows a coloured toast with an icon, a timer line and slide in/out. Colours follow a fixed standard: green success, red error, blue info, amber warning, purple accepted, teal money, grey neutral.
+- **In-app notifications**: bell with an unread badge; welcome message, booking, payment, review, photo-delivery and new-photographer notifications; mark all read; clear one or all, and view cleared ones later.
+- **Portfolio rule**: a photographer needs at least 4 photos before submitting a profile for review.
+- Home page: hero with featured photographers, search by name/city/style/date, occasion cards, how-it-works steps, scroll animations (respects "reduce motion").
+- Tests: 340 automated tests (`python manage.py test photopholio`).
+
 ## Tech stack
 Python 3.10+, Django 5.2, SQLite (PostgreSQL via `DATABASE_URL`), Pillow, Bootstrap 5, WhiteNoise, Gunicorn.
 

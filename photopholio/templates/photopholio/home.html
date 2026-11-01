@@ -1,71 +1,101 @@
 {% extends 'photopholio/base.html' %}
+{% load ui_tags %}
 {% block content %}
-<section class="hero">
+<section class="hero-a">
   <div class="container">
-    <div class="row g-5 align-items-center">
-      <div class="col-lg-7">
-        <h1>Book a photographer whose work you've actually seen.</h1>
-        <p class="lead muted measure mt-3 mb-0">Look through real portfolios, read what past clients wrote, and lock in your date. Weddings, portraits, events, whatever you're planning.</p>
-        <form class="searchbar" method="get" action="{% url 'photographer_list' %}" role="search">
-          <input class="form-control" name="q" placeholder="Name or keyword" aria-label="Name or keyword">
-          <span class="divider"></span>
-          <select class="form-select" name="city" aria-label="City"><option value="">Any city</option>{% for c in cities %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select>
-          <span class="divider"></span>
-          <select class="form-select" name="speciality" aria-label="Style"><option value="">Any style</option>{% for v,l in specialities %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select>
-          <span class="divider"></span>
-          <input class="form-control" type="date" name="date" min="{{ today }}" aria-label="Free on this date" title="Only show photographers who are free on this date">
-          <button class="btn btn-primary" type="submit">Find photographers</button>
-        </form>
-        <p class="small muted mb-0">{{ photographer_count }} photographer{{ photographer_count|pluralize }} in {{ city_count }} cit{{ city_count|pluralize:"y,ies" }}.</p>
+    <div class="row g-4 g-lg-5 align-items-center">
+      <div class="col-lg-6">
+        <h1>Choose by the photos. Book in minutes.</h1>
+        <p class="lead-text">Look through real work from photographers across India, check who is free on your date, and send a request. You pay only after they say yes.</p>
+        <ul class="hero-proof">
+          <li><i class="bi bi-patch-check-fill" aria-hidden="true"></i>Every profile is reviewed</li>
+          <li><i class="bi bi-shield-check" aria-hidden="true"></i>Pay only after they accept</li>
+          <li><i class="bi bi-star-fill" aria-hidden="true"></i>Rated by real customers</li>
+        </ul>
       </div>
-      <div class="col-lg-5">
-        <div class="mosaic">
-          {% for p in featured|slice:":3" %}
-          <a href="{% url 'photographer_detail' p.slug %}">
+      {% with shown=featured|slice:":3" %}{% if shown %}
+      <div class="col-lg-6">
+        <div class="prints">
+          {% for p in shown %}
+          <a class="pr pr-{{ forloop.counter }}" href="{% url 'photographer_detail' p.slug %}">
             {% if p.image %}<img src="{{ p.image.url }}" alt="{{ p.name }}">
-            {% else %}{% with cover=p.cover %}{% if cover %}<img src="{{ cover.image.url }}" alt="{{ cover.caption|truncatechars:60 }}">{% else %}<div class="tile-fallback">{{ p.initials }}</div>{% endif %}{% endwith %}{% endif %}
-            <span class="tag">{{ p.name }}, {{ p.city.name }}</span>
+            {% else %}{% with cover=p.cover %}{% if cover %}<img src="{{ cover.image.url }}" alt="{{ cover.caption|truncatechars:60 }}">{% else %}<span class="tile-fallback">{{ p.initials }}</span>{% endif %}{% endwith %}{% endif %}
+            <span class="pill">{{ p.name }}, {{ p.city.name }}</span>
           </a>
           {% endfor %}
+          <svg class="doodle" viewBox="0 0 120 120" aria-hidden="true"><path d="M92 104 C58 108 34 78 52 48 C60 36 76 38 74 50 C72 60 58 58 58 48 C58 34 64 20 78 10"/><path class="head" d="M70 18 L79 8 L86 20"/></svg>
         </div>
       </div>
+      {% endif %}{% endwith %}
     </div>
   </div>
 </section>
+
+<div class="container search-wrap">
+  <form class="searchbar" method="get" action="{% url 'photographer_list' %}" role="search">
+    <label class="field"><small><i class="bi bi-search" aria-hidden="true"></i>Who are you looking for?</small><input class="form-control" name="q" placeholder="Name or style" aria-label="Name or keyword"></label>
+    <label class="field"><small><i class="bi bi-geo-alt" aria-hidden="true"></i>Where</small><select class="form-select" name="city" aria-label="City"><option value="">Any city</option>{% for c in cities %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></label>
+    <label class="field"><small><i class="bi bi-camera" aria-hidden="true"></i>What for</small><select class="form-select" name="speciality" aria-label="Style"><option value="">Any occasion</option>{% for v,l in specialities %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></label>
+    <label class="field"><small><i class="bi bi-calendar-event" aria-hidden="true"></i>When</small><input class="form-control" type="date" name="date" min="{{ today }}" aria-label="Free on this date" title="Only show photographers who are free on this date"></label>
+    <button class="btn btn-primary" type="submit"><i class="bi bi-search" aria-hidden="true"></i> Search</button>
+  </form>
+  <p class="small muted mt-3 mb-0 text-center">{{ photographer_count }} photographer{{ photographer_count|pluralize }} in {{ city_count }} cit{{ city_count|pluralize:"y,ies" }}.</p>
+</div>
+
+<div class="marquee" aria-hidden="true"><div class="marquee-track">{% for _ in "12" %}{% for v,l in specialities %}<span><i class="bi {{ v|style_icon }}"></i>{{ l }}</span>{% endfor %}{% endfor %}</div></div>
 
 <section class="section">
   <div class="container">
     <div class="section-head">
-      <h2>Top rated photographers</h2>
+      <div><h2 class="mb-1">What are you celebrating?</h2><p class="muted mb-0">Pick an occasion and we show photographers who shoot exactly that.</p></div>
+    </div>
+    <div class="kinds">
+      {% for v,l in specialities %}
+      <a class="kind {{ v|style_tone }}" href="{% url 'photographer_list' %}?speciality={{ v }}">
+        <i class="bi {{ v|style_icon }}" aria-hidden="true"></i>
+        <b>{{ l }}</b><span>{{ v|style_hint }}</span>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="section pt-0">
+  <div class="container">
+    <div class="section-head">
+      <div><h2 class="mb-1">Photographers people book again</h2><p class="muted mb-0">Rated by customers after the shoot. Prices are per day, before any travel.</p></div>
       <a href="{% url 'photographer_list' %}">See everyone</a>
     </div>
-    {% if featured %}<div class="grid-cards">{% for p in featured %}{% include 'photopholio/_card.html' %}{% endfor %}</div>
+    {% if featured %}<div class="grid-cards grid-four">{% for p in featured|slice:":4" %}{% include 'photopholio/_card.html' %}{% endfor %}</div>
     {% else %}<div class="panel text-center"><h3>No photographers added yet</h3><p class="muted mb-0">Add the first one from the admin panel and it will show up here.</p></div>{% endif %}
   </div>
 </section>
 
-<section class="section band">
+<section class="section band" id="how">
   <div class="container">
-    <h2 class="mb-3">Not sure who to pick? Start with a style.</h2>
-    <div class="d-flex flex-wrap gap-2">{% for v,l in specialities %}<a class="chip" href="{% url 'photographer_list' %}?speciality={{ v }}">{{ l }}</a>{% endfor %}</div>
+    <h2 class="mb-1">From first look to final photos</h2>
+    <p class="muted mb-4">Five steps. You can see where you are at any time in My bookings.</p>
+    <ol class="flow">
+      <li><span class="ico"><i class="bi bi-search" aria-hidden="true"></i></span><b>Look around</b><span>Filter by city, style, rating or budget.</span></li>
+      <li><span class="ico"><i class="bi bi-images" aria-hidden="true"></i></span><b>Check their work</b><span>Open a portfolio, zoom into the photos, read the reviews.</span></li>
+      <li><span class="ico"><i class="bi bi-send" aria-hidden="true"></i></span><b>Send a request</b><span>Pick your date. Nothing is charged yet.</span></li>
+      <li><span class="ico"><i class="bi bi-wallet2" aria-hidden="true"></i></span><b>Pay once they accept</b><span>Your payment is held until the shoot is done.</span></li>
+      <li><span class="ico"><i class="bi bi-cloud-arrow-down" aria-hidden="true"></i></span><b>Get photos, leave a review</b><span>The link arrives by email and in your bell.</span></li>
+    </ol>
+    <div class="trust-row">
+      <div><i class="bi bi-patch-check" aria-hidden="true"></i><span><b>Every profile is reviewed</b>Photographers go live only after our team checks them.</span></div>
+      <div><i class="bi bi-shield-lock" aria-hidden="true"></i><span><b>Money held safely</b>The photographer is paid after you confirm the shoot.</span></div>
+      <div><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i><span><b>Clear refund rules</b>You see the <a href="{% url 'cancellation_policy' %}">cancellation policy</a> before you pay.</span></div>
+    </div>
   </div>
 </section>
 
 <section class="section">
   <div class="container">
-    <h2 class="mb-4">How it works</h2>
-    <ol class="steps">
-      <li><h3>Look around</h3><p class="muted mb-0">Filter by city, style, rating or budget.</p></li>
-      <li><h3>Check their work</h3><p class="muted mb-0">Open a portfolio, zoom into the photos, read the reviews.</p></li>
-      <li><h3>Request and pay</h3><p class="muted mb-0">Send a request for your date. Once the photographer accepts, you pay to confirm it.</p></li>
-      <li><h3>Say how it went</h3><p class="muted mb-0">Leave a review after the shoot so the next person knows what to expect.</p></li>
-    </ol>
-  </div>
-</section>
-<section class="section band">
-  <div class="container d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
-    <div><h2 class="mb-1">Are you a photographer?</h2><p class="muted mb-0 measure">Create a profile, upload your best work and get booked. Every profile is reviewed before it goes live.</p></div>
-    <a class="btn btn-outline-dark" href="{% url 'register' %}?role=photographer">Join as a photographer</a>
+    <div class="cta-band">
+      <div><h2>Are you a photographer?</h2><p>Create a profile, upload your best work and get booked. Every profile is reviewed before it goes live.</p></div>
+      <a class="btn btn-primary btn-lg" href="{% url 'register' %}?role=photographer">Create your profile <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+    </div>
   </div>
 </section>
 {% endblock %}
