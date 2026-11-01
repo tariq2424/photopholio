@@ -474,3 +474,19 @@ main{animation:pp-page .5s ease-out}
 .top-badge i{color:#FFE29A}
 @media(max-width:575.98px){.top-badge{font-size:.7rem;padding:.3rem .7rem;left:30%}}
 @media(prefers-reduced-motion:reduce){.top-badge{animation:none}}
+
+/* ---------- small screens: the bell panel and the notifications page must never be cut off ---------- */
+.dropdown-menu{max-width:calc(100vw - 24px)}
+@media(max-width:991.98px){
+  .bell-menu{position:fixed!important;left:12px!important;right:12px!important;top:4.6rem!important;bottom:auto!important;inset-inline:12px!important;transform:none!important;width:auto!important;max-width:none!important;margin:0!important}
+  .bell-list{max-height:min(380px,calc(100vh - 15rem))}
+}
+@media(max-width:575.98px){
+  .notif-row{flex-wrap:wrap;padding:12px 14px}
+  .notif-main{flex:1 1 0;min-width:0;overflow-wrap:anywhere}
+  .notif-actions{flex:0 0 100%;justify-content:flex-end;gap:.35rem;border-top:1.5px dashed var(--line);padding-top:.5rem;margin-top:.1rem}
+  .seg{display:flex;width:100%}.seg a{flex:1;text-align:center}
+  .notif-list + nav .btn{padding:.4rem .8rem}
+}
+.notif-tools .btn{white-space:nowrap}
+@media(max-width:575.98px){.notif-tools{width:100%}.notif-tools form{flex:1}.notif-tools form .btn{width:100%}}

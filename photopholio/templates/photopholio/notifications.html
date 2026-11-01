@@ -7,7 +7,7 @@
       <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-1">Notifications</h1>
       <p class="muted mb-0">{% if unread %}You have <strong>{{ unread }}</strong> unread.{% else %}You are all caught up.{% endif %}</p>
     </div>
-    <div class="d-flex gap-2 align-items-center">
+    <div class="d-flex gap-2 align-items-center flex-wrap notif-tools">
       <div class="seg" role="group" aria-label="Filter">
         <a class="{% if not only_unread and not only_cleared %}on{% endif %}" href="{% url 'notification_list' %}">All</a>
         <a class="{% if only_unread %}on{% endif %}" href="{% url 'notification_list' %}?filter=unread">Unread</a>
