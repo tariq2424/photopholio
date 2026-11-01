@@ -431,7 +431,7 @@ main{animation:pp-page .5s ease-out}
 @keyframes pp-marquee{to{transform:translateX(-50%)}}
 @media(prefers-reduced-motion:reduce){main{animation:none}.reveal{opacity:1;transform:none;transition:none}.marquee-track{animation:none}}
 
-/* ---------- home hero: prints on a table, with a dashed arrow doodle ---------- */
+/* ---------- home hero: prints on a table, with one Top rated badge ---------- */
 .prints{position:relative;width:100%;max-width:520px;margin-left:auto;aspect-ratio:1/.82}
 .pr{--r:0deg;position:absolute;display:block;padding:6px;background:var(--card);border:1px solid var(--line);border-radius:8px;box-shadow:0 22px 40px -22px rgba(16,24,40,.5);
   text-decoration:none;color:#fff;transform:rotate(var(--r));animation:pp-float 7s ease-in-out infinite;transition:box-shadow .3s,scale .3s}
@@ -442,9 +442,6 @@ main{animation:pp-page .5s ease-out}
 .pr-2{--r:2deg;right:0;top:0;width:50%;aspect-ratio:3/2.1;animation-delay:-2.5s;animation-duration:8s}
 .pr-3{--r:-1.5deg;right:5%;top:47%;width:45%;aspect-ratio:4/3;z-index:3;animation-delay:-4.8s;animation-duration:6.5s}
 .pr:hover{z-index:6;scale:1.04;animation-play-state:paused;box-shadow:0 32px 50px -22px rgba(16,24,40,.6);color:#fff}
-.doodle{position:absolute;left:41%;top:33%;width:17%;pointer-events:none;overflow:visible;z-index:4}
-.doodle path{fill:none;stroke:var(--ink);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:5 6}
-.doodle .head{stroke-dasharray:none}
 @keyframes pp-float{0%,100%{transform:translateY(0) rotate(var(--r))}50%{transform:translateY(-10px) rotate(var(--r))}}
 @media(max-width:991.98px){.prints{margin:.5rem auto 0;max-width:460px}}
 @media(max-width:575.98px){.pr{padding:4px;border-radius:6px}.pr img,.pr .tile-fallback{inset:4px;width:calc(100% - 8px);height:calc(100% - 8px)}.pr .pill{left:9px;bottom:9px;font-size:.62rem;padding:.38rem .6rem}.doodle{display:none}}
@@ -472,3 +469,8 @@ main{animation:pp-page .5s ease-out}
 .theme-toggle .theme-sun{order:-1}
 .grid-four{grid-template-columns:repeat(2,minmax(0,1fr))}
 @media(min-width:992px){.grid-four{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
+.top-badge{position:absolute;left:36%;top:-6px;z-index:7;display:inline-flex;align-items:center;gap:.4rem;background:var(--rose);color:#fff;font-weight:700;font-size:.85rem;padding:.4rem .95rem;border-radius:999px;box-shadow:0 10px 20px -10px rgba(229,50,45,.8);transform:rotate(-3deg);animation:pp-float 7s ease-in-out infinite;--r:-3deg}
+.top-badge i{color:#FFE29A}
+@media(max-width:575.98px){.top-badge{font-size:.7rem;padding:.3rem .7rem;left:30%}}
+@media(prefers-reduced-motion:reduce){.top-badge{animation:none}}

@@ -16,6 +16,7 @@
       {% with shown=featured|slice:":3" %}{% if shown %}
       <div class="col-lg-6">
         <div class="prints">
+          <span class="top-badge"><i class="bi bi-star-fill" aria-hidden="true"></i> Top rated</span>
           {% for p in shown %}
           <a class="pr pr-{{ forloop.counter }}" href="{% url 'photographer_detail' p.slug %}">
             {% if p.image %}<img src="{{ p.image.url }}" alt="{{ p.name }}">
@@ -23,7 +24,6 @@
             <span class="pill">{{ p.name }}, {{ p.city.name }}</span>
           </a>
           {% endfor %}
-          <svg class="doodle" viewBox="0 0 120 120" aria-hidden="true"><path d="M92 104 C58 108 34 78 52 48 C60 36 76 38 74 50 C72 60 58 58 58 48 C58 34 64 20 78 10"/><path class="head" d="M70 18 L79 8 L86 20"/></svg>
         </div>
       </div>
       {% endif %}{% endwith %}
