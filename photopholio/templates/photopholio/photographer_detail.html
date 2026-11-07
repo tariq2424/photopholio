@@ -90,7 +90,8 @@
         {% else %}
         <form method="post" novalidate>{% csrf_token %}
           {% for f in form %}
-            {% if f.name == 'package' %}
+            {% if f.name == 'deliverable' or f.name == 'album_style' or f.name == 'album_pages' %}{# rendered in the add-on block below #}
+            {% elif f.name == 'package' %}
             <div class="mb-3"><span class="form-label d-block">Package</span>
               {% for radio in f %}<label class="pkg-option" for="{{ radio.id_for_label }}">{{ radio.tag }}<span>{{ radio.choice_label }}</span></label>{% endfor %}
               {% for e in f.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}</div>
@@ -99,9 +100,27 @@
               {% for e in f.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}</div>
             {% endif %}
           {% endfor %}
+          <div class="mb-3" id="addOn"><span class="form-label d-block">After the shoot</span>
+            {% for radio in form.deliverable %}<label class="pkg-option" for="{{ radio.id_for_label }}">{{ radio.tag }}<span>{{ radio.choice_label }}</span></label>{% endfor %}
+            <div id="albumPick" class="mt-2" hidden>
+              <label class="form-label" for="{{ form.album_style.id_for_label }}">Album</label>
+              <select name="album_style" id="id_album_style" class="form-select">
+                <option value="">Choose an album</option>
+                {% for st in form.fields.album_style.queryset %}<option value="{{ st.pk }}" data-pages="{{ st.pages }}" data-price="{{ st.price }}" data-extra="{{ st.extra_page_price }}" {% if form.album_style.value|stringformat:'s' == st.pk|stringformat:'s' %}selected{% endif %}>{{ st.name }} &middot; {{ st.size_label }} &middot; from &#8377;{{ st.price }}</option>{% endfor %}
+              </select>
+              {% for e in form.album_style.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+              <label class="form-label mt-2" for="id_album_pages">Pages</label>
+              <select name="album_pages" id="id_album_pages" class="form-select"><option value="">Choose an album first</option></select>
+              <p class="small muted mt-2 mb-0">{{ p.name.split.0 }} designs it from your best photos. You approve the design before printing, and it reaches you within 30 days after that. <a href="{% url 'albums' %}" target="_blank" rel="noopener">See all albums</a></p>
+            </div>
+            <div class="small muted mt-1" id="digitalNote" hidden>{{ p.name.split.0 }} shares your photos as a link or folder after the shoot. No extra charge.</div>
+          </div>
           <div class="price-box" id="priceBox" data-url="{% url 'booking_quote' p.slug %}" aria-live="polite">
             <div id="priceLines" class="small"></div>
-            <div class="d-flex justify-content-between align-items-baseline border-top pt-2 mt-2"><strong>Total</strong><strong class="fs-5" id="priceTotal"></strong></div>
+            <div class="d-flex justify-content-between align-items-baseline border-top pt-2 mt-2"><strong id="priceTotalLabel">Total</strong><strong class="fs-5" id="priceTotal"></strong></div>
+            <div id="albumLine" class="small mt-1" hidden><div class="d-flex justify-content-between"><span id="albumLabel"></span><span id="albumAmount"></span></div>
+              <div class="d-flex justify-content-between border-top pt-2 mt-2"><strong>Grand total</strong><strong class="fs-5" id="grandTotal"></strong></div>
+              <div class="muted">Photographer fee is paid after the shoot. The album is a separate order.</div></div>
             <div class="small text-danger mt-1" id="priceError"></div>
           </div>
           <datalist id="event-city-options">{% for c in event_city_options %}<option value="{{ c }}">{% endfor %}</datalist>
@@ -144,15 +163,44 @@ document.querySelectorAll('[data-package]').forEach(function (button) {
   var timer = null;
   function money(n) { return '\u20B9' + Number(n).toLocaleString('en-IN'); }
   function val(id) { var el = document.getElementById(id); return el ? el.value : ''; }
+  function kind() { var r = document.querySelector('input[name="deliverable"]:checked'); return r ? r.value : 'photos'; }
+  function fillPages() {
+    var sel = document.getElementById('id_album_style'), pg = document.getElementById('id_album_pages');
+    if (!sel || !pg) { return; }
+    var o = sel.options[sel.selectedIndex], keep = pg.value;
+    pg.innerHTML = '';
+    if (!o || !o.value) { pg.innerHTML = '<option value="">Choose an album first</option>'; pg.dispatchEvent(new Event('change', {bubbles: true})); return; }
+    var base = Number(o.dataset.pages), price = Number(o.dataset.price), extra = Number(o.dataset.extra);
+    [0, 10, 20].forEach(function (add) {
+      var op = document.createElement('option'); op.value = base + add;
+      op.textContent = (base + add) + ' pages \u00B7 ' + money(price + add * extra);
+      if (String(base + add) === keep) { op.selected = true; }
+      pg.appendChild(op);
+    });
+    pg.dispatchEvent(new Event('change', {bubbles: true}));
+  }
+  function syncAddOn() {
+    var k = kind();
+    document.getElementById('albumPick').hidden = k !== 'album';
+    document.getElementById('digitalNote').hidden = k !== 'photos';
+  }
   function packageId() { var r = document.querySelector('input[name="package"]:checked'); return r ? r.value : ''; }
   function refresh() {
-    var q = new URLSearchParams({date: val('id_event_date'), end_date: val('id_end_date'), package: packageId(), state: val('id_event_state'), city: val('id_event_city')});
+    var q = new URLSearchParams({date: val('id_event_date'), end_date: val('id_end_date'), package: packageId(), state: val('id_event_state'), city: val('id_event_city'), deliverable: kind(), album_style: val('id_album_style'), album_pages: val('id_album_pages')});
     fetch(box.getAttribute('data-url') + '?' + q.toString()).then(function (r) { return r.json(); }).then(function (d) {
       var html = '';
       d.lines.forEach(function (l) { html += '<div class="d-flex justify-content-between"><span>' + l.label.replace(/[<>&]/g, '') + '</span><span>' + money(l.amount) + '</span></div>'; });
       if (!d.has_place) { html += '<div class="muted">Add the venue city and state to see travel charges.</div>'; }
       document.getElementById('priceLines').innerHTML = html;
       document.getElementById('priceTotal').textContent = money(d.total);
+      var al = document.getElementById('albumLine');
+      if (d.album) {
+        al.hidden = false;
+        document.getElementById('priceTotalLabel').textContent = 'Photographer total';
+        document.getElementById('albumLabel').textContent = 'Album: ' + d.album.name + ', ' + d.album.pages + ' pages';
+        document.getElementById('albumAmount').textContent = money(d.album.price);
+        document.getElementById('grandTotal').textContent = money(d.grand);
+      } else { al.hidden = true; document.getElementById('priceTotalLabel').textContent = 'Total'; }
       document.getElementById('priceError').textContent = d.allowed ? '' : d.reason;
     }).catch(function () {});
   }
@@ -162,7 +210,12 @@ document.querySelectorAll('[data-package]').forEach(function (button) {
     if (el) { el.addEventListener('change', later); el.addEventListener('input', later); }
   });
   document.querySelectorAll('input[name="package"]').forEach(function (r) { r.addEventListener('change', later); });
-  document.addEventListener('click', function (e) { if (e.target.closest('[data-package], .cal-day.free')) { setTimeout(refresh, 50); } });
+  document.querySelectorAll('input[name="deliverable"]').forEach(function (r) { r.addEventListener('change', function () { syncAddOn(); later(); }); });
+  var st = document.getElementById('id_album_style'), pgs = document.getElementById('id_album_pages');
+  if (st) { st.addEventListener('change', function () { fillPages(); later(); }); }
+  if (pgs) { pgs.addEventListener('change', later); }
+  fillPages(); syncAddOn();
+  (window.ppListen || function (t, n, f) { t.addEventListener(n, f); })(document, 'click', function (e) { if (e.target.closest('[data-package], .cal-day.free')) { setTimeout(refresh, 50); } });
   refresh();
 })();
 document.querySelectorAll('.cal-day.free[data-date]').forEach(function (day) {

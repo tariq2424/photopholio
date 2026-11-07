@@ -3,15 +3,18 @@
   <div class="grow">
     <h3 class="mb-0">{{ b.user.first_name|default:b.user.username }}</h3>
     <div class="small"><strong>{{ b.date_label }}</strong>{% if b.start_time %} &middot; {{ b.start_time|time:"g:i a" }}{% endif %}</div>
-    <span class="muted small">{% if b.package_name %}{{ b.package_name }}, {% endif %}&#8377;{{ b.amount }}{% if b.is_multi_day %} ({{ b.days }} days &times; &#8377;{{ b.day_rate }}){% endif %}{% if b.travel_fee %} incl. &#8377;{{ b.travel_fee }} travel{% endif %}{% if b.is_paid and b.status != 'cancelled' %} paid{% endif %}{% if b.tool %} &middot; {{ b.tool }}{% endif %}</span>
+    <span class="muted small">{% if b.package_name %}{{ b.package_name }}, {% endif %}&#8377;{{ b.amount }}{% if b.is_multi_day %} ({{ b.days }} days &times; &#8377;{{ b.day_rate }}){% endif %}{% if b.travel_fee %} incl. &#8377;{{ b.travel_fee }} travel{% endif %}{% if b.is_paid and b.status != 'cancelled' %} paid{% endif %}</span>
     {% include 'photopholio/_event_where.html' with b=b %}
+    {% if b.tool %}<div class="small muted clamp2" title="{{ b.tool }}"><i class="bi bi-card-text"></i> {{ b.tool }}</div>{% endif %}
+    {% if b.album %}<div class="small"><i class="bi bi-journal-richtext"></i> <strong>Album</strong> &middot; {{ b.album.style_name }} &middot; {{ b.album.pages }} pages &middot; design fee &#8377;{{ b.album.design_fee }}</div>{% endif %}
     {% include 'photopholio/_shoot_tracker.html' with b=b role='pro' %}
-    {% if b.status == 'completed' and b.awaiting_confirmation %}<div class="small muted">Waiting for the customer to confirm the shoot (done automatically after {{ b.confirm_deadline|date:"j M, g:i a" }}). Your payout is released after that.</div>{% endif %}
-    {% if b.dispute_status == 'open' %}<div class="small text-danger"><strong>The customer reported a problem.</strong> Nobody is blamed yet. Your payout is on hold until the admin decides.</div>
+    {% if b.status == 'completed' %}<div class="small"><i class="bi bi-lock-fill"></i> <a href="{% url 'pro_gallery' b.pk %}"><strong>Private gallery</strong></a> <span class="muted">&middot; {{ b.gallery_count }} photo{{ b.gallery_count|pluralize }}{% if b.album and b.album.design_status == 'approved' %} &middot; approved{% elif b.album and b.album.design_status == 'submitted' %} &middot; design sent{% elif b.album and b.album.design_status == 'changes' %} &middot; changes asked{% elif b.album and b.album.selection_status == 'submitted' %} &middot; photos picked{% endif %}</span></div>{% endif %}
+    {% if b.status == 'completed' and b.awaiting_confirmation %}<div class="small muted">Waiting for the customer to confirm &middot; auto-confirms {{ b.confirm_deadline|date:"j M, g:i a" }}</div>{% endif %}
+    {% if b.dispute_status == 'open' %}<div class="small text-danger"><strong>Customer reported a problem.</strong> Payout on hold until the admin decides.</div>
     {% elif b.dispute_status == 'resolved' and b.dispute_outcome != 'closed' %}<div class="small muted">Report reviewed: {{ b.get_dispute_outcome_display }}. {{ b.dispute_note }}</div>{% endif %}
-    {% if b.status != 'cancelled' and b.status != 'declined' %}{% with e=b.earnings %}<div class="small muted">You earn &#8377;{{ e.payout }} after {{ e.percent }}% commission (&#8377;{{ e.fee }}, on the service price only).</div>{% endwith %}{% endif %}
+    {% if b.status != 'cancelled' and b.status != 'declined' %}{% with e=b.earnings %}<div class="small muted">You earn <strong>&#8377;{{ e.payout }}</strong> &middot; fee &#8377;{{ e.fee }} ({{ e.percent }}%)</div>{% endwith %}{% endif %}
     {% if b.status == 'accepted' %}<div class="small muted">Waiting for payment until {{ b.payment_deadline|date:"j M, g:i a" }}.</div>{% endif %}
-    {% if b.status == 'confirmed' and not b.can_complete %}<div class="small muted">Tap I've arrived, Start and Finish on the day of the event. Finishing the last day completes the booking.</div>{% endif %}
+    {% if b.status == 'confirmed' and not b.can_complete %}<div class="small muted">Use I've arrived, Start and Finish on the event day.</div>{% endif %}
     {% if b.status == 'cancelled' or b.status == 'declined' %}<div class="small muted">{% if b.cancelled_by == 'customer' %}Cancelled by the customer.{% elif b.cancelled_by == 'photographer' %}Cancelled by you.{% elif b.cancelled_by == 'system' %}{{ b.cancel_reason }}{% endif %}</div>{% endif %}
   </div>
   <span class="status status-{{ b.status }}">{{ b.get_status_display }}</span>
@@ -26,12 +29,12 @@
       <a class="btn btn-outline-danger btn-sm" href="{% url 'pro_booking_cancel' b.pk %}">Cancel</a>
     {% endif %}
   </div>
-  {% if b.status == 'completed' %}
+  {% if b.status == 'completed' and not b.album %}
   <form method="post" action="{% url 'pro_delivery' b.pk %}" class="w-100 delivery-form">{% csrf_token %}
-    <label class="small muted d-block mb-1" for="dl{{ b.pk }}">{% if b.delivery_link %}Photos shared {{ b.delivered_at|date:"j M Y" }}. Send a new link to replace it.{% else %}Share the finished photos (Google Drive, Dropbox, any link){% endif %}</label>
+    <label class="small muted d-block mb-1" for="dl{{ b.pk }}">{% if b.delivery_link %}Photos shared {{ b.delivered_at|date:"j M" }} &middot; send a new link to replace{% else %}Share photos (Drive, Dropbox or any link){% endif %}</label>
     <div class="d-flex gap-2 flex-wrap">
       <input class="form-control form-control-sm" style="flex:2 1 220px" id="dl{{ b.pk }}" type="url" name="delivery_link" placeholder="https://" value="{{ b.delivery_link }}" maxlength="500" required>
-      <input class="form-control form-control-sm" style="flex:1 1 160px" type="text" name="delivery_note" placeholder="Note, e.g. password (optional)" value="{{ b.delivery_note }}" maxlength="255">
+      <input class="form-control form-control-sm" style="flex:1 1 160px" type="text" name="delivery_note" placeholder="Note (optional)" value="{{ b.delivery_note }}" maxlength="255">
       <button class="btn btn-outline-dark btn-sm" type="submit">{% if b.delivery_link %}Update{% else %}Share{% endif %}</button>
     </div>
   </form>

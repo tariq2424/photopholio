@@ -1,53 +1,73 @@
 {% extends 'photopholio/base.html' %}
 {% load ui_tags %}
 {% block content %}
-<section class="hero-a">
+<nav class="rail" id="rail" aria-label="Sections">
+  <a href="#top" class="on"><i></i><span>Start</span></a>
+  {% if featured %}<a href="#browse"><i></i><span>Browse</span></a>{% endif %}
+  <a href="#styles"><i></i><span>Styles</span></a>
+  <a href="#how"><i></i><span>How it works</span></a>
+  <a href="#join"><i></i><span>Join</span></a>
+</nav>
+
+<header class="vf-hero" id="top">
   <div class="container">
-    <div class="row g-4 g-lg-5 align-items-center">
-      <div class="col-lg-6">
-        <h1>Choose by the photos. Book in minutes.</h1>
-        <p class="lead-text">Look through real work from photographers across India, check who is free on your date, and send a request. You pay only after they say yes.</p>
-        <ul class="hero-proof">
-          <li><i class="bi bi-patch-check-fill" aria-hidden="true"></i>Every profile is reviewed</li>
-          <li><i class="bi bi-shield-check" aria-hidden="true"></i>Pay only after they accept</li>
-          <li><i class="bi bi-star-fill" aria-hidden="true"></i>Rated by real customers</li>
-        </ul>
-      </div>
-      {% with shown=featured|slice:":3" %}{% if shown %}
-      <div class="col-lg-6">
-        <div class="prints">
-          <span class="top-badge"><i class="bi bi-star-fill" aria-hidden="true"></i> Top rated</span>
-          {% for p in shown %}
-          <a class="pr pr-{{ forloop.counter }}" href="{% url 'photographer_detail' p.slug %}">
-            {% if p.image %}<img src="{{ p.image.url }}" alt="{{ p.name }}">
-            {% else %}{% with cover=p.cover %}{% if cover %}<img src="{{ cover.image.url }}" alt="{{ cover.caption|truncatechars:60 }}">{% else %}<span class="tile-fallback">{{ p.initials }}</span>{% endif %}{% endwith %}{% endif %}
-            <span class="pill">{{ p.name }}, {{ p.city.name }}</span>
-          </a>
-          {% endfor %}
+    <div class="vf">
+      <span class="c tl"></span><span class="c tr"></span>
+      <div class="row g-4 align-items-center">
+        <div class="col-lg-7">
+          <h1>Choose by the photos. <em>Book</em> in minutes.</h1>
+          <p class="lead-text">Look through real work from photographers across India, check who is free on your date, and send a request. You pay only after they say yes.</p>
+          <ul class="hero-proof">
+            <li><i class="bi bi-patch-check-fill" aria-hidden="true"></i>Every profile is reviewed</li>
+            <li><i class="bi bi-shield-check" aria-hidden="true"></i>Pay only after they accept</li>
+            <li><i class="bi bi-star-fill" aria-hidden="true"></i>Rated by real customers</li>
+          </ul>
         </div>
+        {% with shown=featured|slice:":3" %}{% if shown %}
+        <div class="col-lg-5">
+          <div class="prints">
+            <span class="top-badge"><i class="bi bi-star-fill" aria-hidden="true"></i> Top rated</span>
+            {% for p in shown %}
+            <a class="pr pr-{{ forloop.counter }}" href="{% url 'photographer_detail' p.slug %}">{% include 'photopholio/_ph.html' %}<span class="pill">{{ p.name }}, {{ p.city.name }}</span></a>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}{% endwith %}
       </div>
-      {% endif %}{% endwith %}
+      <form class="searchbar vf-search" method="get" action="{% url 'photographer_list' %}" role="search">
+        <label class="field"><small><i class="bi bi-search" aria-hidden="true"></i>Who are you looking for?</small><input class="form-control" name="q" placeholder="Name or style" aria-label="Name or keyword"></label>
+        <label class="field"><small><i class="bi bi-geo-alt" aria-hidden="true"></i>Where</small><select class="form-select" name="city" aria-label="City"><option value="">Any city</option>{% for c in cities %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></label>
+        <label class="field"><small><i class="bi bi-camera" aria-hidden="true"></i>What for</small><select class="form-select" name="speciality" aria-label="Style"><option value="">Any occasion</option>{% for v,l in specialities %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></label>
+        <label class="field"><small><i class="bi bi-calendar-event" aria-hidden="true"></i>When</small><input class="form-control" type="date" name="date" min="{{ today }}" data-placeholder="Pick your date" aria-label="Free on this date" title="Only show photographers who are free on this date"></label>
+        <button class="btn btn-primary" type="submit"><i class="bi bi-search" aria-hidden="true"></i> Search</button>
+      </form>
+    </div>
+  </div>
+</header>
+
+{% if featured %}
+<section class="film" id="browse" aria-label="Photographers">
+  <div class="film-in">
+    <div class="film-head">
+      <h2>Look at the work first.</h2>
+      <a class="btn btn-primary" href="{% url 'photographer_list' %}">See everyone <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+    </div>
+    <div class="bento" data-n="{% if featured|length > 6 %}6{% else %}{{ featured|length }}{% endif %}">
+      {% for p in featured|slice:":6" %}
+      <a class="fr" href="{% url 'photographer_detail' p.slug %}">
+        {% include 'photopholio/_ph.html' %}
+        <span class="cap"><span><b>{{ p.name }}</b><small>{{ p.get_specialities_display }} &middot; {{ p.city.name }}{% if p.rating %} &middot; {{ p.rating|floatformat:1 }} &#9733;{% endif %}</small></span><span class="go"><i class="bi bi-arrow-up-right" aria-hidden="true"></i></span></span>
+      </a>
+      {% endfor %}
     </div>
   </div>
 </section>
+{% endif %}
 
-<div class="container search-wrap">
-  <form class="searchbar" method="get" action="{% url 'photographer_list' %}" role="search">
-    <label class="field"><small><i class="bi bi-search" aria-hidden="true"></i>Who are you looking for?</small><input class="form-control" name="q" placeholder="Name or style" aria-label="Name or keyword"></label>
-    <label class="field"><small><i class="bi bi-geo-alt" aria-hidden="true"></i>Where</small><select class="form-select" name="city" aria-label="City"><option value="">Any city</option>{% for c in cities %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></label>
-    <label class="field"><small><i class="bi bi-camera" aria-hidden="true"></i>What for</small><select class="form-select" name="speciality" aria-label="Style"><option value="">Any occasion</option>{% for v,l in specialities %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></label>
-    <label class="field"><small><i class="bi bi-calendar-event" aria-hidden="true"></i>When</small><input class="form-control" type="date" name="date" min="{{ today }}" aria-label="Free on this date" title="Only show photographers who are free on this date"></label>
-    <button class="btn btn-primary" type="submit"><i class="bi bi-search" aria-hidden="true"></i> Search</button>
-  </form>
-  <p class="small muted mt-3 mb-0 text-center">{{ photographer_count }} photographer{{ photographer_count|pluralize }} in {{ city_count }} cit{{ city_count|pluralize:"y,ies" }}.</p>
-</div>
-
-<div class="marquee" aria-hidden="true"><div class="marquee-track">{% for _ in "12" %}{% for v,l in specialities %}<span><i class="bi {{ v|style_icon }}"></i>{{ l }}</span>{% endfor %}{% endfor %}</div></div>
-
-<section class="section">
+<section class="styles-sec" id="styles" aria-label="Browse by style">
   <div class="container">
-    <div class="section-head">
-      <div><h2 class="mb-1">What are you celebrating?</h2><p class="muted mb-0">Pick an occasion and we show photographers who shoot exactly that.</p></div>
+    <div class="styles-head">
+      <div><h2>What are you celebrating?</h2><p class="muted mb-0">Pick a style and see every photographer who shoots it.</p></div>
     </div>
     <div class="kinds">
       {% for v,l in specialities %}
@@ -60,28 +80,59 @@
   </div>
 </section>
 
-<section class="section pt-0">
+<section class="how" id="how" aria-label="How it works">
   <div class="container">
-    <div class="section-head">
-      <div><h2 class="mb-1">Photographers people book again</h2><p class="muted mb-0">Rated by customers after the shoot. Prices are per day, before any travel.</p></div>
-      <a href="{% url 'photographer_list' %}">See everyone</a>
+    <h2 class="how-title">From first look to final photos</h2>
+    <div class="how-tabs" role="tablist"><button type="button" class='on'><i class="bi bi-search" aria-hidden="true"></i>Find</button><button type="button"><i class="bi bi-images" aria-hidden="true"></i>Check the work</button><button type="button"><i class="bi bi-send" aria-hidden="true"></i>Send a request</button><button type="button"><i class="bi bi-wallet2" aria-hidden="true"></i>Pay when accepted</button><button type="button"><i class="bi bi-cloud-arrow-down" aria-hidden="true"></i>Get your photos</button><button type="button"><i class="bi bi-book" aria-hidden="true"></i>Make an album</button></div>
+    <div class="how-steps">
+      {% with a=featured.0 b=featured.1 c=featured.2 d=featured.3 %}
+      <article class="how-step on">
+          <div class="how-copy"><span class="how-ico"><i class="bi bi-search" aria-hidden="true"></i></span><h3>Find</h3><p>Search by city, style and date. Only photographers who are free on your day are shown.</p></div>
+          <div class="demo"><div class="d-row"><span class="chip-d"><i class="bi bi-geo-alt" aria-hidden="true"></i> Your city</span><span class="chip-d"><i class="bi bi-camera" aria-hidden="true"></i> Your occasion</span><span class="chip-d"><i class="bi bi-calendar-event" aria-hidden="true"></i> Your date</span></div>
+            <div class="d-lines"><i style="width:90%"></i><i style="width:68%"></i></div>
+            <div class="d-row">{% if a %}<span class="thumb">{% include 'photopholio/_ph.html' with p=a %}</span>{% endif %}{% if b %}<span class="thumb">{% include 'photopholio/_ph.html' with p=b %}</span>{% endif %}{% if c %}<span class="thumb">{% include 'photopholio/_ph.html' with p=c %}</span>{% endif %}</div>
+            <span class="chip-d hot"><i class="bi bi-check2-circle" aria-hidden="true"></i> Free on your date</span></div>
+        </article>
+      <article class="how-step">
+          <div class="how-copy"><span class="how-ico"><i class="bi bi-images" aria-hidden="true"></i></span><h3>Check the work</h3><p>Open a portfolio, zoom into the photos and read what past clients wrote.</p></div>
+          <div class="demo"><div class="d-row">{% if d %}<span class="thumb">{% include 'photopholio/_ph.html' with p=d %}</span>{% endif %}{% if b %}<span class="thumb">{% include 'photopholio/_ph.html' with p=b %}</span>{% endif %}{% if a %}<span class="thumb">{% include 'photopholio/_ph.html' with p=a %}</span>{% endif %}</div>
+            <div class="d-lines"><i style="width:62%"></i><i style="width:86%"></i></div>
+            <div class="d-row"><span class="chip-d"><i class="bi bi-star-fill" aria-hidden="true"></i> Rated by customers</span><span class="chip-d"><i class="bi bi-box-seam" aria-hidden="true"></i> Packages and prices</span></div></div>
+        </article>
+      <article class="how-step">
+          <div class="how-copy"><span class="how-ico"><i class="bi bi-send" aria-hidden="true"></i></span><h3>Send a request</h3><p>Pick your date and send it. Nothing is charged at this stage.</p></div>
+          <div class="demo"><div class="d-row"><span class="chip-d"><i class="bi bi-calendar-check" aria-hidden="true"></i> Your date</span></div>
+            <div class="d-lines"><i style="width:80%"></i><i style="width:55%"></i><i style="width:70%"></i></div>
+            <span class="chip-d hot"><i class="bi bi-send" aria-hidden="true"></i> Send request &middot; nothing charged</span></div>
+        </article>
+      <article class="how-step">
+          <div class="how-copy"><span class="how-ico"><i class="bi bi-wallet2" aria-hidden="true"></i></span><h3>Pay when accepted</h3><p>Once the photographer accepts, pay to lock the date. Your money is held until the shoot is done.</p></div>
+          <div class="demo"><div class="d-row"><span class="chip-d acc"><i class="bi bi-patch-check-fill" aria-hidden="true"></i> Accepted by your photographer</span></div>
+            <div class="d-money">&#8377; &bull;&bull;&bull;&bull;&bull;</div>
+            <div class="d-row"><span class="chip-d"><i class="bi bi-shield-lock" aria-hidden="true"></i> Held safely until the shoot is done</span></div>
+            <span class="chip-d hot"><i class="bi bi-wallet2" aria-hidden="true"></i> Pay now</span></div>
+        </article>
+      <article class="how-step">
+          <div class="how-copy"><span class="how-ico"><i class="bi bi-cloud-arrow-down" aria-hidden="true"></i></span><h3>Get your photos</h3><p>The delivery link arrives by email and in your bell. Then leave a review.</p></div>
+          <div class="demo"><div class="d-row"><span class="chip-d done"><i class="bi bi-check-circle-fill" aria-hidden="true"></i> Photos delivered</span></div>
+            <div class="d-row">{% if c %}<span class="thumb">{% include 'photopholio/_ph.html' with p=c %}</span>{% endif %}{% if a %}<span class="thumb">{% include 'photopholio/_ph.html' with p=a %}</span>{% endif %}</div>
+            <span class="chip-d hot"><i class="bi bi-cloud-arrow-down" aria-hidden="true"></i> Open your photos</span>
+            <div class="d-row"><span class="chip-d">Rate your photographer &#9733;&#9733;&#9733;&#9733;&#9733;</span></div></div>
+        </article>
+      <article class="how-step">
+          <div class="how-copy"><span class="how-ico"><i class="bi bi-book" aria-hidden="true"></i></span><h3>Make an album <span class="muted" style="font-size:.5em;font-weight:600">(optional)</span></h3><p>Add a printed album when you book. Pick your favourite photos, approve the design, and we deliver it to your home within 30 days. <a href="{% url 'albums' %}">See the albums</a></p></div>
+          <div class="demo"><div class="d-row"><span class="chip-d"><i class="bi bi-heart" aria-hidden="true"></i> Pick favourites</span><span class="chip-d"><i class="bi bi-vector-pen" aria-hidden="true"></i> Photographer designs</span></div>
+            <div class="alb-mini"><span></span><span></span><span></span><span></span></div>
+            <div class="d-row"><span class="chip-d acc"><i class="bi bi-patch-check-fill" aria-hidden="true"></i> You approve it</span><span class="chip-d done"><i class="bi bi-truck" aria-hidden="true"></i> Delivered home</span></div>
+            <span class="chip-d hot"><i class="bi bi-geo-alt" aria-hidden="true"></i> Track it on PhotoPholio</span></div>
+        </article>
+      {% endwith %}
     </div>
-    {% if featured %}<div class="grid-cards grid-four">{% for p in featured|slice:":4" %}{% include 'photopholio/_card.html' %}{% endfor %}</div>
-    {% else %}<div class="panel text-center"><h3>No photographers added yet</h3><p class="muted mb-0">Add the first one from the admin panel and it will show up here.</p></div>{% endif %}
   </div>
 </section>
 
-<section class="section band" id="how">
+<section class="section pt-0">
   <div class="container">
-    <h2 class="mb-1">From first look to final photos</h2>
-    <p class="muted mb-4">Five steps. You can see where you are at any time in My bookings.</p>
-    <ol class="flow">
-      <li><span class="ico"><i class="bi bi-search" aria-hidden="true"></i></span><b>Look around</b><span>Filter by city, style, rating or budget.</span></li>
-      <li><span class="ico"><i class="bi bi-images" aria-hidden="true"></i></span><b>Check their work</b><span>Open a portfolio, zoom into the photos, read the reviews.</span></li>
-      <li><span class="ico"><i class="bi bi-send" aria-hidden="true"></i></span><b>Send a request</b><span>Pick your date. Nothing is charged yet.</span></li>
-      <li><span class="ico"><i class="bi bi-wallet2" aria-hidden="true"></i></span><b>Pay once they accept</b><span>Your payment is held until the shoot is done.</span></li>
-      <li><span class="ico"><i class="bi bi-cloud-arrow-down" aria-hidden="true"></i></span><b>Get photos, leave a review</b><span>The link arrives by email and in your bell.</span></li>
-    </ol>
     <div class="trust-row">
       <div><i class="bi bi-patch-check" aria-hidden="true"></i><span><b>Every profile is reviewed</b>Photographers go live only after our team checks them.</span></div>
       <div><i class="bi bi-shield-lock" aria-hidden="true"></i><span><b>Money held safely</b>The photographer is paid after you confirm the shoot.</span></div>
@@ -90,11 +141,16 @@
   </div>
 </section>
 
-<section class="section">
+<section class="section" id="join">
   <div class="container">
-    <div class="cta-band">
-      <div><h2>Are you a photographer?</h2><p>Create a profile, upload your best work and get booked. Every profile is reviewed before it goes live.</p></div>
-      <a class="btn btn-primary btn-lg" href="{% url 'register' %}?role=photographer">Create your profile <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+    <div class="join-wrap">
+      <h2>Which one are you?</h2>
+      <div class="join-two">
+        <div class="jc jc-a"><div><h3>I need a photographer</h3><p>Browse real work, check who is free on your date and send a request.</p></div>
+          <a class="btn btn-primary" href="{% url 'photographer_list' %}">Start searching <i class="bi bi-arrow-right" aria-hidden="true"></i></a></div>
+        <div class="jc jc-b"><div><h3>I am a photographer</h3><p>Create a free profile, upload your best work and get booking requests.</p></div>
+          <a class="btn btn-light" href="{% url 'register' %}?role=photographer">Create your profile <i class="bi bi-arrow-right" aria-hidden="true"></i></a></div>
+      </div>
     </div>
   </div>
 </section>

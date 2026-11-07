@@ -1,0 +1,135 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}Shoot gallery{% endblock %}
+{% block content %}
+<div class="container section" style="max-width:1100px">
+  <a class="small" href="{% url 'pro_dashboard' %}">&larr; Dashboard</a>
+  <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-1 mt-2">Shoot gallery</h1>
+  <p class="muted mb-3">{{ b.user.first_name|default:b.user.username }} &middot; {{ b.date_label }}. <i class="bi bi-lock-fill"></i> Private: only the customer and you can see these photos.</p>
+
+  <p class="pro-rule"><i class="bi bi-shield-lock"></i> <span>These photos belong to the customer. After final delivery, delete your copies. Do not keep, share, post or sell them without the customer's written permission. Misuse means removal from PhotoPholio and legal action.</span></p>
+
+  {% if album %}
+  <div class="pstep-now"><i class="bi bi-journal-richtext"></i> <strong>{{ album.style_name }}, {{ album.pages }} pages.</strong>
+    {% if album.production_status == 'delivered' %}Delivered to the customer. Nothing left to do.
+    {% elif not photos %}Start with step 1: upload the shoot photos.
+    {% elif album.design_status == 'approved' %}Design approved. PhotoPholio prints and delivers it now.
+    {% elif album.design_status == 'submitted' %}Your design is with the customer. Wait for their reply.
+    {% elif album.design_status == 'changes' %}The customer asked for changes. Send the changed design in step 3.
+    {% elif locked %}The customer picked {{ favs }} photo{{ favs|pluralize }}, <strong>{{ album.layout }} per page</strong>. Send the album design in step 3.
+    {% else %}Photos are with the customer. They pick up to {{ album.max_photos }} favourites and you get a notification.{% endif %}</div>
+  {% endif %}
+
+  {% if delivered %}
+  <ol class="alb-steps" aria-label="Album progress">
+    <li class="done"><i>1</i><span>Photos picked</span></li><li class="done"><i>2</i><span>Design sent</span></li>
+    <li class="done"><i>3</i><span>Approved</span></li><li class="done"><i>4</i><span>Delivered</span></li>
+  </ol>
+  <div class="dlv-card mb-4">
+    <div class="dlv-ico"><i class="bi bi-check2-circle"></i></div>
+    <h2>This album is delivered</h2>
+    <p>{% if album.delivered_at %}It reached {{ b.user.first_name|default:b.user.username }} on <strong>{{ album.delivered_at|date:"j M Y" }}</strong>. {% endif %}Thank you for the shoot and the design.</p>
+    <dl class="dlv-det">
+      <div><dt>Customer</dt><dd>{{ b.user.first_name|default:b.user.username }}</dd></div>
+      <div><dt>Shoot</dt><dd>{{ b.date_label }}{% if b.event_city %}, {{ b.event_city }}{% endif %}</dd></div>
+      <div><dt>Album</dt><dd>{{ album.style_name }} &middot; {{ album.pages }} pages &middot; {{ album.layout }} per page</dd></div>
+      {% if album.approved_at %}<div><dt>Approved</dt><dd>{{ album.approved_at|date:"j M Y" }}</dd></div>{% endif %}
+      <div><dt>Your design fee</dt><dd>&#8377;{{ album.design_fee }} &middot; {% if album.payout_status == 'paid' %}Paid{% if album.payout_reference %} ({{ album.payout_reference }}){% endif %}{% else %}Ready, paid with your next payout{% endif %}</dd></div>
+    </dl>
+    <div class="d-flex flex-wrap gap-2 justify-content-center">
+      <a class="btn btn-outline-dark" href="{% url 'pro_earnings' %}"><i class="bi bi-wallet2"></i> Earnings</a>
+    </div>
+  </div>
+  {% else %}
+  <div class="pstep">
+    <div class="pstep-h"><i>1</i> <span>Upload the shoot photos</span>{% if photos %}<em class="ok">{{ photos|length }} uploaded</em>{% endif %}</div>
+    {% if can_upload %}
+    <form method="post" enctype="multipart/form-data">{% csrf_token %}
+      <div class="row g-2">
+        <div class="col-md-6"><label class="small muted" for="galFiles">Choose photos</label><input class="form-control" id="galFiles" type="file" name="images" accept="image/*" multiple></div>
+        <div class="col-md-6"><label class="small muted" for="galFolder">Or a whole folder</label><input class="form-control" id="galFolder" type="file" name="folder" webkitdirectory directory multiple></div>
+      </div>
+      <p class="small muted mt-2 mb-2">Up to {{ max_upload }} at a time, each up to 5 MB. Photos are resized to 2000 px.{% if locked %} The customer's picks stay as they are.{% endif %}</p>
+      <button class="btn btn-primary" type="submit">Upload</button>
+    </form>
+    {% else %}<div class="small muted">You can add photos after you mark the shoot as completed.</div>{% endif %}
+  </div>
+
+  {% if album %}
+  <div class="pstep{% if not locked %} is-wait{% endif %}" id="designPanel">
+    <div class="pstep-h"><i>2</i> <span>Customer picks their favourites</span>
+      {% if locked %}<em class="ok">{{ favs }} picked</em>{% else %}<em>Waiting</em>{% endif %}</div>
+    <div class="small muted">{% if locked %}<span class="pstep-lay"><i class="bi bi-layout-split"></i> Layout wanted: <strong>{{ album.layout }} photo{{ album.layout|pluralize }} per page</strong></span> &middot; the picked photos have a heart in the gallery below.{% else %}Nothing to do here. You are notified when they send their picks.{% endif %}</div>
+  </div>
+
+  <div class="pstep{% if not locked %} is-wait{% endif %}">
+    <div class="pstep-h"><i>3</i> <span>Send the album design</span>
+      {% if album.design_status == 'approved' %}<em class="ok">Approved</em>{% elif album.design_status == 'submitted' %}<em>With customer</em>{% elif not locked %}<em>After step 2</em>{% endif %}</div>
+    {% if locked %}
+    {% if album.design_status == 'approved' %}
+      <div class="alert alert-success small mt-2 mb-0">Approved by the customer on {{ album.approved_at|date:"j M Y" }}. PhotoPholio prints and delivers it{% if album.production_status %} (now: <strong>{{ album.get_production_status_display }}</strong>){% endif %}.
+      Your design fee of <strong>&#8377;{{ album.design_fee }}</strong> is ready and is paid with your payout.</div>
+    {% elif album.design_status == 'submitted' %}
+      <p class="small muted mt-2 mb-0">Design {{ designs|length }} is with the customer. You will be told when they approve it or ask for changes.</p>
+    {% endif %}
+    {% for d in designs %}
+      <div class="small mt-3"><strong>Version {{ d.version }}</strong> &middot; {{ d.created_at|date:"j M, g:i A" }} &middot; {{ d.get_status_display }}{% if d.note %} &middot; <span class="muted">{{ d.note }}</span>{% endif %}
+        {% if d.customer_note %}<div class="text-danger">Customer asked: {{ d.customer_note }}</div>{% endif %}</div>
+      {% if d.link %}<div class="small mt-1"><a href="{{ d.link }}" target="_blank" rel="noopener noreferrer">Open design link</a></div>{% endif %}
+    {% endfor %}
+    {% if can_design %}
+    <form method="post" action="{% url 'pro_design_submit' b.pk %}" class="mt-3">{% csrf_token %}
+      <label class="form-label" for="dsLink">{% if designs %}Send the changed design{% else %}Send the album design{% endif %} </label>
+      <input class="form-control mb-2" id="dsLink" type="url" name="link" placeholder="Link to the album PDF, or a folder of page images" maxlength="500" required>
+      <div class="small muted mb-2">Drive or Dropbox: Share, then set it to Anyone with the link.</div>
+      <input class="form-control mb-2" type="text" name="note" maxlength="500" placeholder="Note for the customer (optional)">
+      <button class="btn btn-primary" type="submit">Send design to customer</button>
+    </form>
+    {% endif %}
+    {% else %}<div class="small muted">Once the customer sends their picks, paste the link to your album PDF (or a folder of page images) here.</div>{% endif %}
+  </div>
+
+  <div class="pstep">
+    <div class="pstep-h"><i>4</i> <span>Share all the digital photos</span>{% if b.delivery_link %}<em class="ok">Shared {{ b.delivered_at|date:"j M" }}</em>{% endif %}</div>
+    <form method="post" action="{% url 'pro_delivery' b.pk %}">{% csrf_token %}<input type="hidden" name="next" value="gallery">
+      <div class="d-flex gap-2 flex-wrap">
+        <input class="form-control" style="flex:2 1 240px" id="dlLink" type="url" name="delivery_link" placeholder="Link to a folder of photos (Drive, Dropbox)" value="{{ b.delivery_link }}" maxlength="500" required>
+        <input class="form-control" style="flex:1 1 160px" type="text" name="delivery_note" placeholder="Note (optional)" value="{{ b.delivery_note }}" maxlength="255">
+        <button class="btn btn-outline-dark" type="submit">{% if b.delivery_link %}Update{% else %}Share{% endif %}</button>
+      </div>
+      <div class="small muted mt-1">Set the link to Anyone with the link. Every customer gets their digital photos too, even with an album.</div>
+    </form>
+  </div>
+  {% endif %}
+
+  {% endif %}
+
+  {% if photos and not delivered %}
+  {% if album and locked %}<div class="gal-tools"><span class="seg alb-layouts" role="group" aria-label="Show"><button type="button" class="on" data-show="all">All {{ photos|length }}</button><button type="button" data-show="fav">Picked {{ favs }}</button></span></div>{% endif %}
+  <div class="gal-masonry" id="proGrid">
+    {% for ph in photos %}
+    <figure class="gal-item{% if ph.is_favourite %} is-fav{% endif %}">
+      <img src="{{ ph.image.url }}" alt="Photo {{ forloop.counter }}" loading="lazy">
+      {% if ph.is_favourite %}<span class="gal-heart static"><i class="bi bi-heart-fill"></i></span>{% endif %}
+      {% if not locked %}<form method="post" action="{% url 'pro_gallery_delete' ph.pk %}" class="gal-del">{% csrf_token %}<button type="submit" aria-label="Remove photo {{ forloop.counter }}"><i class="bi bi-trash"></i></button></form>{% endif %}
+    </figure>
+    {% endfor %}
+  </div>
+  {% elif can_upload and not delivered %}
+  <div class="panel text-center"><h3>No photos yet</h3><p class="muted mb-0">Upload the edited photos from this shoot.</p></div>
+  {% endif %}
+</div>
+<script>
+(function () {
+  var g = document.getElementById('proGrid'), t = document.querySelector('.gal-tools'); if (!g) { return; }
+  if (t) { t.addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b) { return; } t.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); }); g.classList.toggle('only-fav', b.dataset.show === 'fav'); }); }
+  var old = document.getElementById('proBox'); if (old) { old.parentNode.removeChild(old); }
+  var box = document.createElement('div'); box.id = 'proBox'; box.className = 'gal-light'; box.hidden = true; box.innerHTML = '<button type="button" class="gl-close" aria-label="Close">&times;</button><img alt="">';
+  document.body.appendChild(box);
+  var cleanup = function () { if (box.parentNode) { box.parentNode.removeChild(box); } };
+  (window.ppListen ? window.ppListen : function () {})(document, 'keydown', function (e) { if (e.key === 'Escape') { box.hidden = true; } });
+  g.addEventListener('click', function (e) { var im = e.target.closest('img'); if (im) { box.querySelector('img').src = im.src; box.hidden = false; } });
+  box.addEventListener('click', function () { box.hidden = true; });
+  window.addEventListener('pagehide', cleanup);
+})();
+</script>
+{% endblock %}

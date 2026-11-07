@@ -59,6 +59,7 @@ def _close(booking, status, by, reason=""):
     booking.save(update_fields=fields)
     # A cancelled booking cannot be moved: close any open reschedule request.
     booking.reschedules.filter(status="pending").update(status="closed", decided_at=timezone.now())
+    money.album_on_cancelled(booking)  # an album ordered with it is cancelled (and refunded if it was paid)
 
 
 def _start_refund(payment, percent, note):

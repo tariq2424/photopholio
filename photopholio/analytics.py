@@ -14,7 +14,7 @@ from django.db.models.functions import TruncMonth
 from django.utils import timezone
 
 from . import money
-from .models import Booking, Payment, Photographer
+from .models import AlbumOrder, Booking, HelpRequest, Payment, Photographer
 
 MONTHS = 6
 
@@ -37,6 +37,32 @@ def _series(rows, keys, field):
 
 def _pct(part, whole):
     return round(part * 100 / whole) if whole else None
+
+
+def album_data():
+    """Printed albums: sold, revenue, PhotoPholio's commission, the design fee owed to / paid to photographers,
+    where the paid albums are in production, and what needs attention."""
+    paid = AlbumOrder.objects.filter(status="paid")
+    live = paid.exclude(payout_status="void")
+    t = live.aggregate(n=Count("id"), revenue=Sum("price"), refunds=Sum("refund_amount"), commission=Sum("platform_commission"))
+    fee = {k: live.filter(payout_status=k).aggregate(s=Sum("design_fee"), n=Count("id")) for k in ("held", "ready", "paid")}
+    labels = dict(AlbumOrder.PRODUCTION_CHOICES)
+    stages = [("waiting", "Waiting for design approval", live.filter(production_status="", delivered_at__isnull=True).count())]
+    for key in ("queued", "printing", "shipped", "delivered"):
+        stages.append((key, labels.get(key, key), live.filter(production_status=key).count()))
+    late = [o for o in live.exclude(production_status="delivered").select_related("booking") if o.is_delayed]
+    return {
+        "sold": t["n"] or 0,
+        "revenue": (t["revenue"] or 0) - (t["refunds"] or 0),
+        "commission": t["commission"] or 0,
+        "fee_held": fee["held"]["s"] or 0, "fee_held_n": fee["held"]["n"],
+        "fee_ready": fee["ready"]["s"] or 0, "fee_ready_n": fee["ready"]["n"],
+        "fee_paid": fee["paid"]["s"] or 0, "fee_paid_n": fee["paid"]["n"],
+        "stages": [{"key": k, "label": l, "n": n} for k, l, n in stages],
+        "late_n": len(late), "late": late[:5],
+        "help_open": HelpRequest.objects.filter(is_open=True).count(),
+        "delivered_n": live.filter(production_status="delivered").count(),
+    }
 
 
 def dashboard_data(today=None, months=MONTHS):
@@ -87,6 +113,7 @@ def dashboard_data(today=None, months=MONTHS):
     to_recover = list(Booking.objects.filter(payout_status="recover").select_related("photographer"))
 
     return {
+        "albums": album_data(),
         "money": {
             "commission_earned": z("ready", "fee") + z("paid", "fee"),
             "commission_pending": z("held", "fee"),

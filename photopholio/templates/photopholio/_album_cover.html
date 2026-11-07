@@ -1,0 +1,2 @@
+{% comment %}Cover for an album style: the uploaded picture, or a drawn cover when there is none. Needs: s = the AlbumStyle.{% endcomment %}
+{% if s.cover_image %}<img src="{{ s.cover_image.url }}" alt="{{ s.name }}" loading="lazy">{% else %}<span class="alb-art tone-{{ s.sort_order|add:0 }}" aria-hidden="true"><i></i><b>{{ s.name }}</b><em>{{ s.size_label }}</em></span>{% endif %}

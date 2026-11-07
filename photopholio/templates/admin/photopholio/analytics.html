@@ -1,5 +1,6 @@
 {% extends "admin/base_site.html" %}
 {% block content %}
+<style>.card-body canvas{max-width:100% !important;height:auto}.card-body{min-width:0}</style>
 {% with k=data.kpis %}
 <div class="row">
   <div class="col-6 col-lg-3 mb-3"><div class="card h-100"><div class="card-body">
@@ -30,6 +31,36 @@
   <div class="col-6 col-lg-3 mb-3"><div class="card h-100"><div class="card-body">
     <div class="text-muted small">Paid out so far</div><div class="h3 mb-0">&#8377;{{ m.paid_out }}</div>
     <div class="small text-muted">{{ m.paid_n }} payout{{ m.paid_n|pluralize }}{% if m.recover_n %} &middot; <span class="text-danger">{{ m.recover_n }} to recover</span>{% endif %}</div></div></div></div>
+</div>
+{% endwith %}
+
+
+{% with a=data.albums %}
+<h5 class="mb-2">Printed albums</h5>
+<div class="row">
+  <div class="col-6 col-lg-3 mb-3"><div class="card h-100"><div class="card-body">
+    <div class="text-muted small">Albums sold</div><div class="h3 mb-0">{{ a.sold }}</div>
+    <div class="small text-muted">{{ a.delivered_n }} delivered</div></div></div></div>
+  <div class="col-6 col-lg-3 mb-3"><div class="card h-100"><div class="card-body">
+    <div class="text-muted small">Album revenue</div><div class="h3 mb-0">&#8377;{{ a.revenue }}</div>
+    <div class="small text-muted">after refunds</div></div></div></div>
+  <div class="col-6 col-lg-3 mb-3"><div class="card h-100 border-success"><div class="card-body">
+    <div class="text-muted small">PhotoPholio album commission</div><div class="h3 mb-0">&#8377;{{ a.commission }}</div>
+    <div class="small text-muted">kept after print cost and design fee</div></div></div></div>
+  <div class="col-6 col-lg-3 mb-3"><div class="card h-100 {% if a.help_open %}border-warning{% endif %}"><div class="card-body">
+    <div class="text-muted small">Help requests open</div><div class="h3 mb-0">{{ a.help_open }}</div>
+    <div class="small"><a href="{% url 'admin:photopholio_helprequest_changelist' %}?is_open__exact=1">Open the list</a></div></div></div></div>
+</div>
+<div class="row">
+  <div class="col-lg-6 mb-3"><div class="card h-100"><div class="card-header"><strong>Album design fees (photographer payout)</strong></div><div class="card-body p-0">
+    <table class="table table-sm mb-0"><tbody>
+      <tr><td>After customer approval</td><td class="text-muted">{{ a.fee_held_n }}</td><td class="text-right">&#8377;{{ a.fee_held }}</td></tr>
+      <tr class="{% if a.fee_ready_n %}table-warning{% endif %}"><td><a href="{% url 'admin:photopholio_payouts' %}">Ready to pay</a></td><td class="text-muted">{{ a.fee_ready_n }}</td><td class="text-right">&#8377;{{ a.fee_ready }}</td></tr>
+      <tr><td>Paid</td><td class="text-muted">{{ a.fee_paid_n }}</td><td class="text-right">&#8377;{{ a.fee_paid }}</td></tr>
+    </tbody></table></div></div></div>
+  <div class="col-lg-6 mb-3"><div class="card h-100 {% if a.late_n %}border-danger{% endif %}"><div class="card-header"><strong>Where the albums are</strong>{% if a.late_n %} <span class="badge badge-danger">{{ a.late_n }} late</span>{% endif %}</div><div class="card-body p-0">
+    <table class="table table-sm mb-0"><tbody>{% for s in a.stages %}<tr><td>{{ s.label }}</td><td class="text-right">{{ s.n }}</td></tr>{% endfor %}</tbody></table>
+    {% if a.late %}<p class="p-2 mb-0 small text-danger">Late: {% for o in a.late %}<a href="{% url 'admin:photopholio_albumorder_change' o.pk %}">#{{ o.pk }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}</div></div></div>
 </div>
 {% endwith %}
 

@@ -1,0 +1,19 @@
+            <div class="bell-head"><strong>Notifications</strong><button type="button" class="bell-close" aria-label="Close notifications"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+              <span class="bell-head-actions">
+              {% if unread_n %}<form method="post" action="{% url 'notification_read_all' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ next_url|default:request.get_full_path }}"><button class="btn btn-link btn-sm p-0" type="submit">Mark all read</button></form>{% endif %}{% if recent_n %}<form method="post" action="{% url 'notification_clear_all' %}" data-clear="all">{% csrf_token %}<input type="hidden" name="next" value="{{ next_url|default:request.get_full_path }}"><button class="btn btn-link btn-sm p-0 ms-3" type="submit">Clear all</button></form>{% endif %}
+              </span></div>
+            <div class="bell-list">
+              {% for n in recent_n %}
+              <div class="bell-row">
+              <a class="bell-item{% if not n.is_read %} unread{% endif %}" href="{% url 'notification_open' n.pk %}">
+                <span class="bell-ico k-{{ n.kind }}"><i class="bi {% if n.kind == 'payment' %}bi-wallet2{% elif n.kind == 'review' %}bi-star{% elif n.kind == 'photos' %}bi-images{% elif n.kind == 'profile' %}bi-person-check{% elif n.kind == 'alert' %}bi-exclamation-circle{% elif n.kind == 'welcome' %}bi-emoji-smile{% elif n.kind == 'new' %}bi-camera{% else %}bi-calendar-check{% endif %}" aria-hidden="true"></i></span>
+                <span class="bell-txt"><span class="bell-title">{{ n.title }}</span><span class="bell-body">{{ n.body|truncatechars:90 }}</span><span class="bell-time">{{ n.created_at|timesince }} ago</span></span>
+                {% if not n.is_read %}<span class="bell-dot" aria-label="Unread"></span>{% endif %}
+              </a>
+              <form method="post" action="{% url 'notification_clear' n.pk %}" data-clear="one">{% csrf_token %}<input type="hidden" name="next" value="{{ next_url|default:request.get_full_path }}"><button class="bell-x" type="submit" title="Clear" aria-label="Clear this notification"><i class="bi bi-x-lg" aria-hidden="true"></i></button></form>
+              </div>
+              {% empty %}
+              <div class="bell-empty"><i class="bi bi-bell-slash" aria-hidden="true"></i><span>You are all caught up.</span><a href="{% url 'notification_list' %}?filter=cleared">View cleared</a></div>
+              {% endfor %}
+            </div>
+            <a class="bell-foot" href="{% url 'notification_list' %}">See all notifications</a>

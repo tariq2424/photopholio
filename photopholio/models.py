@@ -1,3 +1,4 @@
+from datetime import timedelta
 from django.contrib.auth.models import User
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
@@ -49,6 +50,8 @@ class UserProfile(models.Model):
     # Decides which login page and which part of the site this account uses.
     # Accounts with no profile (e.g. admin-created) are treated as customers.
     role = models.CharField(max_length=12, choices=ROLE_CHOICES, default="customer")
+    rules_accepted_at = models.DateTimeField("photo rules accepted", null=True, blank=True,
+                                             help_text="A photographer ticked the rules about the customer's photos when signing up.")
     dob = models.DateField("date of birth", null=True, blank=True)
     address = models.TextField(blank=True)
     phone_no = models.BigIntegerField("phone number", null=True, blank=True)
@@ -351,6 +354,23 @@ class Booking(models.Model):
     cancelled_at = models.DateTimeField(null=True, blank=True)
     cancel_reason = models.TextField(blank=True)
     # Photos are delivered as a link (Google Drive, Dropbox, ...) once the shoot is completed.
+    @property
+    def album(self):
+        """The active album order of this booking, or None."""
+        order = getattr(self, "album_order", None)
+        return order if order is not None and order.status != "cancelled" else None
+
+    @property
+    def gallery_count(self):
+        return self.gallery.count()
+
+    @property
+    def grand_total(self):
+        """Photography plus album: what the customer pays at checkout. `amount` stays photography only."""
+        return self.amount + (self.album.price if self.album and self.album.status == "placed" else 0)
+
+    DELIVERABLE_CHOICES = [("photos", "Photographer + digital photos"), ("album", "Photographer + printed album"), ("digital", "Photographer + digital photos")]
+    deliverable = models.CharField(max_length=10, choices=DELIVERABLE_CHOICES, default="photos")
     delivery_link = models.URLField(max_length=500, blank=True)
     delivery_note = models.CharField(max_length=255, blank=True)
     delivered_at = models.DateTimeField(null=True, blank=True)
@@ -748,3 +768,251 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"{self.user.username}: {self.title}"
+
+
+class AlbumStyle(models.Model):
+    """A printed album PhotoPholio offers (Classic Hardbound, Flush-mount...). Every number here is set by the admin, nothing is fixed in code."""
+    STATUS_CHOICES = [("available", "Available"), ("soon", "Coming soon"), ("paused", "Paused (hidden)")]
+
+    name = models.CharField(max_length=80, unique=True)
+    slug = models.SlugField(max_length=90, unique=True, blank=True)
+    tagline = models.CharField(max_length=140, blank=True)
+    description = models.TextField(blank=True)
+    best_for = models.CharField(max_length=120, blank=True, help_text="Styles this album suits, e.g. wedding, event")
+    size_label = models.CharField("size", max_length=40, help_text="For example 12 x 15 in")
+    pages = models.PositiveSmallIntegerField("pages included", default=30)
+    max_photos = models.PositiveSmallIntegerField("photos it holds", default=80)
+    cover_material = models.CharField(max_length=80, blank=True)
+    paper_quality = models.CharField(max_length=80, blank=True)
+    design_style = models.CharField(max_length=80, blank=True)
+    price = models.PositiveIntegerField("price (Rs) for the included pages", default=0)
+    extra_page_price = models.PositiveIntegerField("price per extra page (Rs)", default=0)
+    print_cost = models.PositiveIntegerField("printing cost (Rs, admin only)", default=0, help_text="What the print partner charges us. Never shown to customers.")
+    delivery_days_min = models.PositiveSmallIntegerField("delivery after approval, from (days)", default=30)
+    delivery_days_max = models.PositiveSmallIntegerField("delivery after approval, to (days)", default=30)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="available", db_index=True)
+    sort_order = models.PositiveSmallIntegerField(default=1)
+    cover_image = models.ImageField(upload_to="albums/", blank=True)
+    theme = models.CharField("look of the preview", max_length=12, blank=True, default="",
+                             help_text="Colours, fonts and page numbers of the album the customer flips through. Automatic gives each style its own look.")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["sort_order", "price"]
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            from django.utils.text import slugify
+            base, n = slugify(self.name) or "album", 1
+            self.slug = base
+            while AlbumStyle.objects.filter(slug=self.slug).exclude(pk=self.pk).exists():
+                n += 1
+                self.slug = f"{base}-{n}"
+        super().save(*args, **kwargs)
+
+    @property
+    def delivery_text(self):
+        a, b = self.delivery_days_min, self.delivery_days_max
+        return f"{a} days" if a == b else f"{a} to {b} days"
+
+    @property
+    def best_for_list(self):
+        return [x.strip() for x in self.best_for.split(",") if x.strip()]
+
+    def total_for(self, pages=None):
+        """Price for a given number of pages: the included pages cost `price`, each extra page `extra_page_price`."""
+        extra = max(0, (pages or self.pages) - self.pages)
+        return self.price + extra * self.extra_page_price
+
+
+class AlbumStyleImage(models.Model):
+    style = models.ForeignKey(AlbumStyle, on_delete=models.CASCADE, related_name="images")
+    image = models.ImageField(upload_to="albums/samples/")
+    caption = models.CharField(max_length=140, blank=True)
+    sort_order = models.PositiveSmallIntegerField(default=1)
+
+    class Meta:
+        ordering = ["sort_order", "pk"]
+
+    def __str__(self):
+        return f"{self.style.name} sample {self.sort_order}"
+
+
+class AlbumOrder(models.Model):
+    """A printed album ordered together with a booking. Its money is kept apart from the photography money
+    (Booking.amount, Payment.amount and the photographer commission are never touched by it)."""
+    STATUS_CHOICES = [("placed", "Waiting for payment"), ("paid", "Paid"), ("cancelled", "Cancelled")]
+    PAYOUT_CHOICES = [("held", "Held"), ("ready", "Ready to pay"), ("paid", "Paid"), ("void", "Void")]
+    booking = models.OneToOneField(Booking, on_delete=models.CASCADE, related_name="album_order")
+    style = models.ForeignKey(AlbumStyle, on_delete=models.SET_NULL, null=True, blank=True, related_name="orders")
+    style_name = models.CharField(max_length=120)
+    pages = models.PositiveSmallIntegerField()
+    price = models.PositiveIntegerField(help_text="What the customer pays for the album.")
+    print_cost = models.PositiveIntegerField(default=0, help_text="Estimated print lab cost at order time.")
+    design_percent = models.PositiveSmallIntegerField(default=60, help_text="Photographer's share of (price - print cost).")
+    design_fee = models.PositiveIntegerField(default=0, help_text="Paid to the photographer for designing the album.")
+    platform_commission = models.PositiveIntegerField(default=0, help_text="PhotoPholio's album commission.")
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="placed")
+    max_photos = models.PositiveSmallIntegerField(default=40, help_text="How many photos the customer may pick for this album.")
+    selection_status = models.CharField(max_length=10, default="open", choices=[("open", "Customer is choosing"), ("submitted", "Selection sent")])
+    selection_submitted_at = models.DateTimeField(null=True, blank=True)
+    layout = models.PositiveSmallIntegerField("photos per page", default=2, choices=[(1, "1 photo per page"), (2, "2 photos per page"), (4, "4 photos per page")],
+                                              help_text="How the customer wants the photos laid out.")
+    late_alerted = models.BooleanField(default=False, help_text="The late-album alert has been sent.")
+    # "" = no design yet, submitted = waiting for the customer, changes = customer asked for changes, approved
+    design_status = models.CharField(max_length=10, blank=True, default="",
+                                     choices=[("", "No design yet"), ("submitted", "Design sent"), ("changes", "Changes asked"), ("approved", "Approved")])
+    approved_at = models.DateTimeField(null=True, blank=True)
+    # production (admin): what the printed album is doing after the customer approved the design
+    PRODUCTION_CHOICES = [("", "Waiting for design approval"), ("queued", "Design approved"), ("printing", "Printing"),
+                          ("shipped", "On the way"), ("delivered", "Delivered")]
+    production_status = models.CharField(max_length=10, blank=True, default="", choices=PRODUCTION_CHOICES)
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    tracking_url = models.URLField("tracking link", max_length=300, blank=True)
+    delivery_otp = models.CharField(max_length=4, blank=True)
+    otp_given = models.CharField(max_length=4, blank=True, help_text="Code the customer told the courier. Enter it when marking delivered.")
+    payout_ready_at = models.DateTimeField(null=True, blank=True)
+    payout_paid_at = models.DateTimeField(null=True, blank=True)
+    payout_reference = models.CharField(max_length=80, blank=True)
+    delivery_days_min = models.PositiveSmallIntegerField(default=30)
+    delivery_days_max = models.PositiveSmallIntegerField(default=30)
+    paid_at = models.DateTimeField(null=True, blank=True)
+    refund_amount = models.PositiveIntegerField(default=0)
+    payout_status = models.CharField(max_length=8, choices=PAYOUT_CHOICES, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.style_name} ({self.pages} pages) for booking {self.booking_id}"
+
+    @property
+    def margin(self):
+        return self.price - self.print_cost
+
+    @property
+    def page_aspect(self):
+        """Width / height of one album page, taken from the style's size (for the on-screen preview)."""
+        import re
+        m = re.search(r"(\d+(?:\.\d+)?)\s*[x\u00d7]\s*(\d+(?:\.\d+)?)", self.style.size_label if self.style_id else "")
+        if not m or float(m.group(2)) == 0:
+            return 0.75
+        return round(min(1.6, max(0.5, float(m.group(1)) / float(m.group(2)))), 3)
+
+    @property
+    def delivery_from(self):
+        """Earliest delivery date: counted from the day the customer approves the design."""
+        return (self.approved_at + timedelta(days=self.delivery_days_min)).date() if self.approved_at else None
+
+    @property
+    def delivery_to(self):
+        return (self.approved_at + timedelta(days=self.delivery_days_max)).date() if self.approved_at else None
+
+    @property
+    def is_delayed(self):
+        """Approved, not delivered yet, and past the promised delivery date."""
+        return bool(self.approved_at and self.status == "paid" and self.production_status != "delivered"
+                    and timezone.localdate() > self.delivery_to)
+
+    @property
+    def latest_design(self):
+        return self.designs.prefetch_related("pages").last()
+
+    TRACK_STEPS = [("queued", "Approved", "bi-check2-circle"), ("printing", "Printing", "bi-printer"),
+                   ("shipped", "On the way", "bi-truck"), ("delivered", "Delivered", "bi-house-heart")]
+
+    @property
+    def track_steps(self):
+        """The four delivery steps for the customer's tracker: done, now (the current one) or todo, with the date each was reached."""
+        keys = [k for k, _, _ in self.TRACK_STEPS]
+        cur = keys.index(self.production_status) if self.production_status in keys else -1
+        when = {}
+        for e in self.events.all():
+            when.setdefault(e.status, e.created_at)
+        out = []
+        for i, (k, label, icon) in enumerate(self.TRACK_STEPS):
+            state = "done" if i < cur or (i == cur and k == "delivered") else ("now" if i == cur else "todo")
+            out.append({"key": k, "label": label, "icon": icon, "state": state, "date": when.get(k)})
+        return out
+
+    @property
+    def needs_answer(self):
+        """The customer wrote in the Help center and nobody has answered yet."""
+        return self.help_requests.filter(is_open=True).exists()
+
+
+class GalleryPhoto(models.Model):
+    """A photo from one shoot, shared privately with the customer who booked it (never shown on public pages)."""
+    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name="gallery")
+    image = models.ImageField(upload_to="gallery/%Y/%m/")
+    is_favourite = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["pk"]
+
+    def __str__(self):
+        return f"Gallery photo {self.pk} of booking {self.booking_id}"
+
+
+class AlbumEvent(models.Model):
+    """One line of an album's journey (the timeline the customer sees)."""
+    order = models.ForeignKey(AlbumOrder, on_delete=models.CASCADE, related_name="events")
+    status = models.CharField(max_length=10, blank=True)
+    label = models.CharField(max_length=160)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "pk"]
+
+
+class AlbumDesign(models.Model):
+    """One version of the album design the photographer sends for the customer to approve."""
+    order = models.ForeignKey(AlbumOrder, on_delete=models.CASCADE, related_name="designs")
+    version = models.PositiveSmallIntegerField()
+    link = models.URLField(max_length=500, blank=True, help_text="Link to the design (a Drive or Dropbox file or folder).")
+    note = models.CharField(max_length=500, blank=True)
+    status = models.CharField(max_length=10, default="submitted",
+                              choices=[("submitted", "Waiting for the customer"), ("changes", "Changes asked"), ("approved", "Approved")])
+    customer_note = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["version"]
+
+    def __str__(self):
+        return f"Design v{self.version} for album order {self.order_id}"
+
+
+class AlbumDesignPage(models.Model):
+    design = models.ForeignKey(AlbumDesign, on_delete=models.CASCADE, related_name="pages")
+    image = models.ImageField(upload_to="album-designs/%Y/%m/")
+    position = models.PositiveSmallIntegerField(default=1)
+
+    class Meta:
+        ordering = ["position", "pk"]
+
+
+class HelpRequest(models.Model):
+    """A customer asks the admin something (for example, why an album is late). The admin replies on the Help center page."""
+    TOPIC_CHOICES = [("late", "My album is late"), ("album", "Question about my album"), ("booking", "Question about a booking"), ("misuse", "My photos are being misused"), ("other", "Something else")]
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="help_requests")
+    album = models.ForeignKey(AlbumOrder, on_delete=models.SET_NULL, null=True, blank=True, related_name="help_requests")
+    topic = models.CharField(max_length=10, choices=TOPIC_CHOICES, default="album")
+    message = models.TextField(max_length=1000)
+    reply = models.TextField(max_length=1000, blank=True)
+    replied_at = models.DateTimeField(null=True, blank=True)
+    is_open = models.BooleanField("open", default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.get_topic_display()} from {self.user}"

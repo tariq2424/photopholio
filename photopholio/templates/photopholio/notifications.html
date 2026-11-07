@@ -14,13 +14,25 @@
         <a class="{% if only_cleared %}on{% endif %}" href="{% url 'notification_list' %}?filter=cleared">Cleared</a>
       </div>
       {% if unread %}<form method="post" action="{% url 'notification_read_all' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn btn-outline-dark btn-sm" type="submit"><i class="bi bi-check2-all"></i> Mark all read</button></form>{% endif %}
-      {% if can_clear %}<form method="post" action="{% url 'notification_clear_all' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn btn-outline-dark btn-sm" type="submit"><i class="bi bi-x-circle"></i> Clear all</button></form>{% endif %}
+      {% if page.object_list and not only_cleared %}<form method="post" action="{% url 'notification_clear_all' %}" data-slide-all>{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn btn-outline-dark btn-sm" type="submit"><i class="bi bi-x-circle"></i> Clear all</button></form>{% endif %}
+      {% if page.object_list %}<button class="btn btn-outline-dark btn-sm" type="button" data-psel="start"><i class="bi bi-check2-square"></i> Select</button>{% endif %}
     </div>
   </div>
 
-  <div class="panel p-0 notif-list">
+  <div class="notif-selbar" id="pSelBar" hidden>
+    <label class="bell-all"><input type="checkbox" data-psel="all"> <span>Select all on this page</span></label>
+    <span class="notif-selbtns">
+      <button type="button" class="btn btn-outline-dark btn-sm" data-psel="read" disabled>Mark read</button>
+      <button type="button" class="btn btn-outline-dark btn-sm" data-psel="clear" disabled>Clear from bell</button>
+      <button type="button" class="btn btn-danger btn-sm" data-psel="delete" disabled><i class="bi bi-trash3"></i> Delete (<b>0</b>)</button>
+      <button type="button" class="btn btn-link btn-sm" data-psel="stop">Done</button>
+    </span>
+  </div>
+
+  <div class="panel p-0 notif-list" id="pList">
     {% for n in page %}
     <div class="notif-row{% if not n.is_read %} unread{% endif %}{% if n.cleared %} is-cleared{% endif %}">
+      <label class="notif-check" aria-label="Select this notification"><input type="checkbox" value="{{ n.pk }}"><i class="bi bi-check-lg" aria-hidden="true"></i></label>
       <span class="bell-ico k-{{ n.kind }}"><i class="bi {% if n.kind == 'payment' %}bi-wallet2{% elif n.kind == 'review' %}bi-star{% elif n.kind == 'photos' %}bi-images{% elif n.kind == 'profile' %}bi-person-check{% elif n.kind == 'alert' %}bi-exclamation-circle{% elif n.kind == 'welcome' %}bi-emoji-smile{% elif n.kind == 'new' %}bi-camera{% else %}bi-calendar-check{% endif %}" aria-hidden="true"></i></span>
       <a class="notif-main" href="{% url 'notification_open' n.pk %}">
         <span class="bell-title">{{ n.title }}{% if not n.is_read %} <span class="badge-new">New</span>{% endif %}</span>

@@ -1,0 +1,54 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}{{ style.name }} album{% endblock %}
+{% block content %}
+<div class="container section">
+  <nav class="small mb-3" aria-label="Breadcrumb"><a href="{% url 'albums' %}">Albums</a> <span class="muted">/</span> {{ style.name }}</nav>
+  <div class="row g-4 g-lg-5">
+    <div class="col-lg-6">
+      <div class="alb-big">{% with s=style %}{% include 'photopholio/_album_cover.html' %}{% endwith %}</div>
+      {% if style.images.all %}
+      <div class="alb-samples">{% for im in style.images.all %}<img src="{{ im.image.url }}" alt="{{ im.caption|default:style.name }}" loading="lazy">{% endfor %}</div>
+      {% endif %}
+      <div class="panel alb-preview mt-4" data-spread>
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+          <b>See how your photos sit on the pages</b>
+          <span class="seg alb-layouts" role="group" aria-label="Page layout"><button type="button" class="on" data-l="l1">One big</button><button type="button" data-l="l2">Two</button><button type="button" data-l="l3">Four</button></span>
+        </div>
+        <div class="spread l1" aria-hidden="true">
+          <div class="pg">{% for _ in "1234" %}<span class="slot"></span>{% endfor %}</div>
+          <div class="pg">{% for _ in "1234" %}<span class="slot"></span>{% endfor %}</div>
+        </div>
+        <p class="small muted mb-0 mt-3">An example of one spread. Your own photos will be placed here once you choose them after your shoot.</p>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <h1 class="alb-title">{{ style.name }}</h1>
+      {% if style.tagline %}<p class="lead-text muted">{{ style.tagline }}</p>{% endif %}
+      {% if style.best_for_list %}<p class="d-flex flex-wrap gap-2">{% for b in style.best_for_list %}<span class="chip" style="cursor:default">{{ b|title }}</span>{% endfor %}</p>{% endif %}
+      {% if style.description %}<p>{{ style.description }}</p>{% endif %}
+      <dl class="alb-specs">
+        <div><dt>Size</dt><dd>{{ style.size_label }}</dd></div>
+        <div><dt>Pages</dt><dd>{{ style.pages }} included</dd></div>
+        <div><dt>Holds</dt><dd>Up to {{ style.max_photos }} photos</dd></div>
+        {% if style.cover_material %}<div><dt>Cover</dt><dd>{{ style.cover_material }}</dd></div>{% endif %}
+        {% if style.paper_quality %}<div><dt>Paper</dt><dd>{{ style.paper_quality }}</dd></div>{% endif %}
+        {% if style.design_style %}<div><dt>Design</dt><dd>{{ style.design_style }}</dd></div>{% endif %}
+        <div><dt>Delivery</dt><dd>Within 30 days after you approve the design</dd></div>
+      </dl>
+      <div class="panel alb-price-box">
+        <div class="alb-price-main"><small>Price</small>&#8377;{{ style.price }}<span class="muted"> for {{ style.pages }} pages</span></div>
+        <table class="alb-table"><tbody>{% for n, total in price_rows %}<tr><td>{{ n }} pages</td><td>&#8377;{{ total }}</td></tr>{% endfor %}</tbody></table>
+        <p class="small muted mb-3">Extra pages are &#8377;{{ style.extra_page_price }} each. The photographer's own fee is separate.</p>
+        {% if style.status == 'soon' %}<button class="btn btn-outline-dark w-100" type="button" disabled>Coming soon</button>
+        {% else %}<a class="btn btn-primary w-100" href="{% url 'photographer_list' %}">Book a photographer, then add this album <i class="bi bi-arrow-right" aria-hidden="true"></i></a>{% endif %}
+      </div>
+    </div>
+  </div>
+  {% if others %}
+  <h2 class="h4 mt-5 mb-3">Other albums</h2>
+  <div class="alb-grid alb-grid-3">
+    {% for s in others %}<a class="alb-card" href="{% url 'album_detail' s.slug %}"><span class="alb-cover">{% include 'photopholio/_album_cover.html' %}</span><span class="alb-body"><b class="alb-name">{{ s.name }}</b><span class="alb-foot"><span class="alb-price"><small>From</small>&#8377;{{ s.price }}</span><span class="alb-more">View <i class="bi bi-arrow-right" aria-hidden="true"></i></span></span></span></a>{% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

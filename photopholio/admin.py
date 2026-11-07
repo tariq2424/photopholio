@@ -12,9 +12,9 @@ from django.urls import path
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 
-from . import analytics, booking_flow, emails, money, reviews, tracking
+from . import album_ops, analytics, booking_flow, emails, money, notifications, reviews, tracking
 from .throttle import ThrottledLoginMixin
-from .models import (Favourite, RescheduleRequest, Booking, City, ContactUs, Country, Feedback, BlockedDate, LoginAttempt, Package, Payment,
+from .models import (AlbumDesign, AlbumOrder, HelpRequest, AlbumStyle, AlbumStyleImage, Favourite, RescheduleRequest, Booking, City, ContactUs, Country, Feedback, BlockedDate, LoginAttempt, Package, Payment,
                      Photo, Photographer, Portfolio, ShootDay, ShootEvent, State, UserProfile)
 
 
@@ -401,10 +401,26 @@ def payouts_view(request):
         group = by_photographer.setdefault(b.photographer_id, {"photographer": b.photographer, "bookings": [], "total": 0})
         group["bookings"].append(b)
         group["total"] += b.payout_amount
+    # Album design fees. If the shoot's own payout is ready too, the fee rides on that row (one transfer, one reference).
+    albums_ready = list(AlbumOrder.objects.filter(status="paid", payout_status="ready").select_related("booking__photographer", "booking__user"))
+    ready_ids = {b.pk for b in ready}
+    for o in albums_ready:
+        o.with_shoot = o.booking_id in ready_ids
+        if o.with_shoot:
+            for g in by_photographer.values():
+                for b in g["bookings"]:
+                    if b.pk == o.booking_id:
+                        b.album_fee = o.design_fee
+                        g["total"] += o.design_fee
+        else:
+            g = by_photographer.setdefault(o.booking.photographer_id, {"photographer": o.booking.photographer, "bookings": [], "total": 0})
+            g.setdefault("albums", []).append(o)
+            g["total"] += o.design_fee
     context = {
         **admin.site.each_context(request), "title": "Payouts",
         "groups": list(by_photographer.values()),
-        "ready_total": sum(b.payout_amount for b in ready),
+        "ready_total": sum(b.payout_amount for b in ready) + sum(o.design_fee for o in albums_ready),
+        "recent_albums": list(AlbumOrder.objects.filter(payout_status="paid").select_related("booking__photographer").order_by("-payout_paid_at")[:15]),
         "recover": list(bookings.filter(payout_status="recover").order_by("-event_date")),
         "held": money.totals(Booking.objects.all()).get("held", {"n": 0, "money": 0, "fee": 0}),
         "recent": list(bookings.filter(payout_status="paid").order_by("-payout_paid_at")[:25]),
@@ -424,6 +440,23 @@ def payout_pay_view(request, pk):
         messages.success(request, f"Marked as paid: Rs.{booking.payout_amount} to {booking.photographer.name}. They were emailed.")
     except booking_flow.FlowError as e:
         messages.error(request, str(e))
+    return redirect("admin:photopholio_payouts")
+
+
+def payout_album_pay_view(request, pk):
+    """Pay an album design fee on its own (the shoot's payout was already sent earlier)."""
+    if not _can_manage_payouts(request):
+        raise PermissionDenied
+    if request.method != "POST":
+        return redirect("admin:photopholio_payouts")
+    order = get_object_or_404(AlbumOrder.objects.select_related("booking__photographer"), pk=pk)
+    reference = " ".join((request.POST.get("reference") or "").split())
+    if not 3 <= len(reference) <= 60:
+        messages.error(request, "Write the transfer reference (UTR or transaction id), 3 to 60 characters.")
+    elif money.album_mark_paid(order, reference):
+        messages.success(request, f"Album design fee of Rs.{order.design_fee} marked paid to {order.booking.photographer.name}.")
+    else:
+        messages.error(request, "This album fee is not ready to pay.")
     return redirect("admin:photopholio_payouts")
 
 
@@ -493,18 +526,27 @@ def payouts_csv_view(request):
     return response
 
 
+def admin_live_view(request):
+    from django.http import JsonResponse
+    from . import album_ops, livever
+    album_ops.sweep_late()
+    return JsonResponse({"ver": livever.admin_version()})
+
+
 _original_get_urls = admin.site.get_urls
 
 
 def _get_urls_with_analytics():
     wrap = admin.site.admin_view
     return [
+        path("live/", wrap(admin_live_view), name="photopholio_admin_live"),
         path("analytics/", wrap(analytics_view), name="photopholio_analytics"),
         path("payouts/", wrap(payouts_view), name="photopholio_payouts"),
         path("payouts/export/", wrap(payouts_csv_view), name="photopholio_payouts_csv"),
         path("disputes/", wrap(disputes_view), name="photopholio_disputes"),
         path("disputes/<int:pk>/resolve/", wrap(dispute_resolve_view), name="photopholio_dispute_resolve"),
         path("payouts/<int:pk>/pay/", wrap(payout_pay_view), name="photopholio_payout_pay"),
+        path("payouts/album/<int:pk>/pay/", wrap(payout_album_pay_view), name="photopholio_payout_album_pay"),
         path("payouts/<int:pk>/recovered/", wrap(payout_recovered_view), name="photopholio_payout_recovered"),
     ] + _original_get_urls()
 
@@ -559,3 +601,144 @@ class RescheduleRequestAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False
+
+
+
+class AlbumStyleImageInline(admin.TabularInline):
+    model = AlbumStyleImage
+    extra = 1
+
+
+@admin.register(AlbumStyle)
+class AlbumStyleAdmin(admin.ModelAdmin):
+    list_display = ("name", "size_label", "pages", "price", "extra_page_price", "print_cost", "margin", "status", "sort_order")
+    list_editable = ("status", "sort_order")
+    list_filter = ("status",)
+    search_fields = ("name", "best_for")
+    prepopulated_fields = {"slug": ("name",)}
+    inlines = [AlbumStyleImageInline]
+    actions = ["activate", "pause"]
+    fieldsets = (
+        (None, {"fields": ("name", "slug", "tagline", "description", "best_for", "cover_image", "theme", "status", "sort_order")}),
+        ("Specifications", {"fields": ("size_label", "pages", "max_photos", "cover_material", "paper_quality", "design_style")}),
+        ("Pricing", {"fields": ("price", "extra_page_price", "print_cost")}),
+    )
+
+    @admin.display(description="Before commission and delivery")
+    def margin(self, obj):
+        return f"Rs.{obj.price - obj.print_cost}"
+
+    @admin.action(description="Make selected albums available")
+    def activate(self, request, queryset):
+        self.message_user(request, f"{queryset.update(status='available')} album(s) are now available.")
+
+    @admin.action(description="Pause selected albums (hide from customers)")
+    def pause(self, request, queryset):
+        self.message_user(request, f"{queryset.update(status='paused')} album(s) paused.")
+
+
+class AlbumDesignInline(admin.TabularInline):
+    model = AlbumDesign
+    extra = 0
+    can_delete = False
+    fields = ("version", "link", "note", "status", "customer_note", "created_at")
+    readonly_fields = ("version", "link", "note", "status", "customer_note", "created_at", "decided_at")
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+class DelayedFilter(admin.SimpleListFilter):
+    title = "delivery"
+    parameter_name = "delivery"
+
+    def lookups(self, request, model_admin):
+        return [("late", "Late (over 30 days since approval)"), ("open", "Approved, not delivered"), ("help", "Customer wrote to Help center")]
+
+    def queryset(self, request, qs):
+        v = self.value()
+        if v == "help":
+            return qs.filter(help_requests__is_open=True).distinct()
+        if v in ("late", "open"):
+            open_qs = qs.filter(status="paid", approved_at__isnull=False).exclude(production_status="delivered")
+            return open_qs if v == "open" else qs.filter(pk__in=[o.pk for o in open_qs if o.is_delayed])
+        return qs
+
+
+@admin.register(AlbumOrder)
+class AlbumOrderAdmin(admin.ModelAdmin):
+    """One album from payment to the doorstep. To move it forward: tick the order and pick an action
+    (Printing, On the way, Delivered). For 'On the way' paste the tracking link on the order first.
+    The photographer's design fee is paid from the Payouts page."""
+    inlines = [AlbumDesignInline]
+    list_display = ("id", "style_name", "pages", "booking", "price", "design_status", "production_status", "delay", "help_waiting", "created_at")
+    list_filter = (DelayedFilter, "production_status", "status", "style")
+    search_fields = ("style_name", "booking__user__username", "booking__photographer__name")
+    actions = ["act_printing", "act_shipped", "act_delivered"]
+    fieldsets = (
+        ("Order", {"fields": ("booking", "style_name", "pages", "layout", "status", "paid_at", "refund_amount")}),
+        ("Money", {"fields": ("price", "print_cost", "design_percent", "design_fee", "platform_commission")}),
+        ("Design", {"fields": ("selection_status", "design_status", "approved_at", "delivery_window")}),
+        ("Delivery", {"fields": ("production_status", "tracking_url", "delivery_otp", "otp_given", "delivered_at")}),
+        ("Design fee payout (done on the Payouts page)", {"fields": ("payout_status", "payout_ready_at", "payout_paid_at", "payout_reference")}),
+    )
+    readonly_fields = ("booking", "style", "style_name", "pages", "layout", "price", "print_cost", "design_percent", "design_fee",
+                       "platform_commission", "paid_at", "refund_amount", "created_at", "selection_status", "design_status",
+                       "approved_at", "delivery_window", "production_status", "delivered_at", "delivery_otp",
+                       "payout_status", "payout_ready_at", "payout_paid_at", "payout_reference", "status")
+
+    @admin.display(description="Late?", boolean=True)
+    def delay(self, obj):
+        return obj.is_delayed
+
+    @admin.display(description="Help?", boolean=True)
+    def help_waiting(self, obj):
+        return obj.needs_answer
+
+    @admin.display(description="Promised by")
+    def delivery_window(self, obj):
+        return f"{obj.delivery_to.day} {obj.delivery_to:%b %Y} (30 days after approval)" if obj.approved_at else "-"
+
+    def _move(self, request, queryset, status):
+        done = 0
+        for o in queryset.select_related("booking__user"):
+            err = album_ops.advance(o, status)
+            if err:
+                self.message_user(request, f"#{o.pk}: {err}", messages.WARNING)
+            else:
+                done += 1
+        if done:
+            self.message_user(request, f"{done} album(s) moved.", messages.SUCCESS)
+
+    @admin.action(description="Mark: printing")
+    def act_printing(self, request, qs): self._move(request, qs, "printing")
+
+    @admin.action(description="Mark: on the way (needs the tracking link)")
+    def act_shipped(self, request, qs): self._move(request, qs, "shipped")
+
+    @admin.action(description="Mark: delivered (enter the customer's code first, if they gave it)")
+    def act_delivered(self, request, qs): self._move(request, qs, "delivered")
+
+
+@admin.register(HelpRequest)
+class HelpRequestAdmin(admin.ModelAdmin):
+    """Help center. A customer wrote; type your answer in "Reply" and save. They are told, and the question closes."""
+    list_display = ("created_at", "user", "topic", "short", "album", "is_open")
+    list_filter = ("is_open", "topic")
+    search_fields = ("user__username", "message", "reply")
+    readonly_fields = ("user", "album", "topic", "message", "created_at", "replied_at")
+    fields = ("user", "album", "topic", "message", "created_at", "reply", "replied_at", "is_open")
+
+    @admin.display(description="Message")
+    def short(self, obj):
+        return obj.message[:70]
+
+    def has_add_permission(self, request):
+        return False
+
+    def save_model(self, request, obj, form, change):
+        if obj.reply and not obj.replied_at:
+            obj.replied_at = timezone.now()
+            obj.is_open = False
+            notifications.notify(obj.user, "PhotoPholio replied in the Help center", obj.reply[:200], "/help/", subject="help")
+        super().save_model(request, obj, form, change)

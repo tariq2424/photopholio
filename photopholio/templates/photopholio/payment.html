@@ -9,12 +9,14 @@
     <div class="border-top pt-3 mb-3">
       <div class="d-flex justify-content-between"><span>{% if booking.package_name %}{{ booking.package_name }} package{% else %}Full day{% endif %}{% if booking.is_multi_day %} ({{ booking.days }} days &times; &#8377;{{ booking.day_rate }}){% endif %}</span><span>&#8377;{{ booking.service_price }}</span></div>
       {% if booking.travel_fee %}<div class="d-flex justify-content-between"><span>Travel and stay</span><span>&#8377;{{ booking.travel_fee }}</span></div>{% endif %}
-      <div class="d-flex justify-content-between border-top pt-2 mt-2"><strong>Total</strong><strong class="fs-4">&#8377;{{ booking.amount }}</strong></div>
+      {% if booking.album %}<div class="d-flex justify-content-between"><span>Printed album: {{ booking.album.style_name }}, {{ booking.album.pages }} pages</span><span>&#8377;{{ booking.album.price }}</span></div>{% endif %}
+      <div class="d-flex justify-content-between border-top pt-2 mt-2"><strong>Total</strong><strong class="fs-4">&#8377;{{ booking.grand_total }}</strong></div>
+      {% if booking.album %}<p class="small muted mb-0 mt-2">The album is designed by {{ booking.photographer.name.split.0 }} after the shoot and delivered within 30 days after you approve the design.</p>{% endif %}
     </div>
     <div class="alert alert-light border small">Cancellation: {% for label, percent in policy_rows %}{{ percent }}% refund {{ label|lower }}{% if not forloop.last %}; {% endif %}{% endfor %}. <a href="{% url 'cancellation_policy' %}">Read the policy</a></div>
     <form method="post" novalidate>{% csrf_token %}
       {% include 'photopholio/_form_fields.html' %}
-      <button class="btn btn-primary w-100 py-2" type="submit">Pay &#8377;{{ booking.amount }}</button>
+      <button class="btn btn-primary w-100 py-2" type="submit">Pay &#8377;{{ booking.grand_total }}</button>
     </form>
     <div class="alert alert-warning mt-3 mb-0 small">Demo checkout: no card details are collected and nothing is charged.</div>
   </div>

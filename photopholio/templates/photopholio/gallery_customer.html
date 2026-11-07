@@ -1,0 +1,351 @@
+{% extends 'photopholio/base.html' %}
+{% block title %}Your photos{% endblock %}
+{% block content %}
+<div class="container section{% if theme %} th-{{ theme.key }}{% endif %}" id="galRoot" style="max-width:1240px{% if theme %};--cv1:{{ theme.cv1 }};--cv2:{{ theme.cv2 }};--cv-ink:{{ theme.ink }};--cv-line:{{ theme.line }};--pg1:{{ theme.pg1 }};--pg2:{{ theme.pg2 }};--pg-ink:{{ theme.pn }};--bk-font:{{ theme.font_stack }}{% endif %}" data-num="{{ theme.num|default:'plain' }}" data-layout="{{ album.layout|default:2 }}" data-pick="{% if can_pick and not locked %}1{% endif %}" data-limit="{{ limit }}" data-min="{{ min_picks }}" data-pages="{{ album.pages|default:0 }}" data-aspect="{{ aspect }}" data-toggle-url="{% url 'gallery_toggle' b.pk 0 %}"{% if album %} data-cover="{% if album.style.cover_image %}{{ album.style.cover_image.url }}{% endif %}" data-cover-name="{{ album.style_name }}" data-cover-size="{{ album.style.size_label }}"{% endif %}>
+  <a class="small" href="{% if is_owner %}{% url 'my_bookings' %}{% else %}{% url 'pro_gallery' b.pk %}{% endif %}">&larr; Back</a>
+  <h1 style="font-size:clamp(2rem,4.5vw,3rem)" class="mb-1 mt-2">{{ b.photographer.name }}: your photos</h1>
+  <p class="muted mb-3">{{ b.date_label }}{% if b.event_city %} &middot; {{ b.event_city }}{% endif %} &middot; <i class="bi bi-lock-fill"></i> Private to you and {{ b.photographer.name.split.0 }}</p>
+
+  {% if b.delivery_link and not delivered %}
+  <div class="panel mb-3" id="digitalBox">
+    <strong><i class="bi bi-images"></i> Your digital photos</strong>
+    <div class="small muted mt-1">{% if b.delivery_note %}{{ b.delivery_note }} &middot; {% endif %}Shared {{ b.delivered_at|date:"j M" }}. Download them to your phone, laptop or a pen drive.</div>
+    <a class="btn btn-outline-dark btn-sm mt-2" href="{{ b.delivery_link }}" target="_blank" rel="noopener noreferrer"><i class="bi bi-box-arrow-up-right"></i> Open photos</a>
+  </div>
+  {% elif can_pick and b.status == 'completed' and not delivered %}
+  <div class="small muted mb-3"><i class="bi bi-images"></i> {{ b.photographer.name.split.0 }} will also share all your digital photos here as a link.</div>
+  {% endif %}
+
+  {% if can_pick %}
+  <ol class="alb-steps" aria-label="Album progress">
+    <li class="{% if delivered or locked %}done{% else %}now{% endif %}"><i>1</i><span>Pick photos</span></li>
+    <li class="{% if delivered or album.design_status == 'approved' or album.design_status == 'submitted' %}done{% elif locked %}now{% endif %}"><i>2</i><span>Design</span></li>
+    <li class="{% if delivered or album.design_status == 'approved' %}done{% elif album.design_status == 'submitted' %}now{% endif %}"><i>3</i><span>Approve</span></li>
+    <li class="{% if delivered %}done{% elif album.design_status == 'approved' %}now{% endif %}"><i>4</i><span>Delivery</span></li>
+  </ol>
+  {% if delivered %}
+  <div class="dlv-card mb-4" id="deliveredBox">
+    <div class="dlv-ico"><i class="bi bi-check2-circle"></i></div>
+    <h2>Your album has been delivered</h2>
+    <p>{% if album.delivered_at %}It reached you on <strong>{{ album.delivered_at|date:"j M Y" }}</strong>. {% endif %}Thank you for choosing {{ b.photographer.name }} and PhotoPholio. We hope you enjoy every page.</p>
+    <dl class="dlv-det">
+      <div><dt>Photographer</dt><dd>{{ b.photographer.name }}</dd></div>
+      <div><dt>Shoot</dt><dd>{{ b.date_label }}{% if b.event_city %}, {{ b.event_city }}{% endif %}</dd></div>
+      <div><dt>Album</dt><dd>{{ album.style_name }} &middot; {{ album.pages }} pages</dd></div>
+      {% if album.approved_at %}<div><dt>Approved</dt><dd>{{ album.approved_at|date:"j M Y" }}</dd></div>{% endif %}
+    </dl>
+    <p class="dlv-safe"><i class="bi bi-shield-check"></i> <span><strong>Your photos stay yours.</strong> After delivery your photographer must delete their copies and may not keep, share, post or sell them without your written permission. Misuse leads to removal from PhotoPholio and legal action. Report it in the <a href="{% url 'help_center' %}">Help center</a>. <a href="{% url 'cancellation_policy' %}#privacy">Read the policy</a></span></p>
+    <div class="d-flex flex-wrap gap-2">
+      {% if design.link %}<a class="btn btn-primary" href="{{ design.link }}" target="_blank" rel="noopener noreferrer"><i class="bi bi-journal-richtext"></i> Open your album</a>{% endif %}
+      {% if b.delivery_link %}<a class="btn btn-outline-dark" href="{{ b.delivery_link }}" target="_blank" rel="noopener noreferrer"><i class="bi bi-images"></i> Open digital photos</a>{% endif %}
+    </div>
+  </div>
+  {% else %}
+  <div class="panel mb-3" id="pickBar">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+      <div>
+        <strong><i class="bi bi-journal-richtext"></i> {{ album.style_name }} &middot; {{ album.pages }} pages</strong>
+        <div class="small muted">
+          {% if album.design_status == 'approved' %}Design approved. Delivery is on its way.
+          {% elif album.design_status %}{{ b.photographer.name.split.0 }} is designing your album.
+          {% elif locked %}Selection sent on {{ album.selection_submitted_at|date:"j M, g:i A" }}. {{ b.photographer.name.split.0 }} is designing your album.
+          {% else %}Tap the heart on your favourites ({{ min_picks }} to {{ limit }}). The preview updates as you pick.{% endif %}
+        </div>
+      </div>
+      {% if locked and not album.design_status %}
+        <form method="post" action="{% url 'gallery_reopen' b.pk %}">{% csrf_token %}<button class="btn btn-outline-dark btn-sm" type="submit">Add or change picks</button></form>
+      {% endif %}
+    </div>
+    <div class="small text-danger mt-2" id="pickError" role="alert"></div>
+  </div>
+  {% endif %}
+  {% elif b.deliverable == 'digital' and photos %}
+  <div class="alert alert-secondary">You can view your photos here. Downloads are coming soon.</div>
+  {% endif %}
+
+  {% if can_pick and designs %}
+  {% if not delivered %}
+  <div class="panel mb-4" id="designBox">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+      <strong><i class="bi bi-palette"></i> Your album design{% if design %} &middot; version {{ design.version }}{% endif %}</strong>
+      {% if album.design_status == 'approved' %}<span class="status status-confirmed">Approved</span>
+      {% elif album.design_status == 'changes' %}<span class="status status-pending">Changes asked</span>
+      {% else %}<span class="status status-accepted">Waiting for you</span>{% endif %}
+    </div>
+    {% if design.note %}<p class="small muted mb-2">{{ b.photographer.name.split.0 }}: {{ design.note }}</p>{% endif %}
+    {% if album.design_status == 'approved' %}
+      <div class="small muted mb-2">You approved this design on {{ album.approved_at|date:"j M Y" }}.</div>
+    {% elif album.design_status == 'changes' %}
+      <div class="small muted mb-2">You asked: {% for d in designs %}{% if forloop.last %}{{ d.customer_note }}{% endif %}{% endfor %}. {{ b.photographer.name.split.0 }} will send a new design.</div>
+    {% endif %}
+    {% if design.link %}<a class="btn btn-outline-dark" href="{{ design.link }}" target="_blank" rel="noopener noreferrer"><i class="bi bi-box-arrow-up-right"></i> Open the design (PDF or folder)</a>{% endif %}
+    {% if album.design_status == 'submitted' %}
+    <div class="d-flex flex-wrap gap-2 mt-3">
+      <form method="post" action="{% url 'design_decide' b.pk 'approve' %}">{% csrf_token %}<button class="btn btn-primary" type="submit">Approve design</button></form>
+    </div>
+    {% if rounds_left %}
+    <form method="post" action="{% url 'design_decide' b.pk 'changes' %}" class="mt-3">{% csrf_token %}
+      <label class="form-label small" for="chNote">Want something changed? ({{ rounds_left }} round{{ rounds_left|pluralize }} left)</label>
+      <textarea class="form-control mb-2" id="chNote" name="note" rows="2" maxlength="500" placeholder="e.g. Use photo 3 on the cover, make page 5 simpler"></textarea>
+      <button class="btn btn-outline-dark btn-sm" type="submit">Ask for changes</button>
+    </form>
+    {% else %}<p class="small muted mt-2 mb-0">You have used all rounds of changes. Please approve the design or contact us.</p>{% endif %}
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if album.design_status == 'approved' %}
+  <div class="panel mb-4" id="trackBox">
+    <strong><i class="bi bi-box-seam"></i> Track your album</strong>
+    {% if delivered %}<div class="small mt-1 text-success fw-semibold"><i class="bi bi-check-circle-fill"></i> Delivered{% if album.delivered_at %} on {{ album.delivered_at|date:"j M Y" }}{% endif %}</div>{% else %}<div class="small muted mt-1">It reaches you within 30 days of your approval, by <strong>{{ album.delivery_to|date:"j M Y" }}</strong>.</div>{% endif %}
+    <ol class="trk" aria-label="Album delivery progress">{% for st in album.track_steps %}
+      <li class="{{ st.state }}"><i><span class="bi {{ st.icon }}"></span></i><b>{{ st.label }}</b><em>{% if st.date %}{{ st.date|date:"j M" }}{% endif %}</em></li>{% endfor %}
+    </ol>
+    {% if album.production_status == 'shipped' %}
+      <div class="d-flex flex-wrap align-items-center gap-3 mt-2">
+        <a class="btn btn-primary btn-sm" href="{{ album.tracking_url }}" target="_blank" rel="noopener noreferrer"><i class="bi bi-geo-alt"></i> Track on the courier site</a>
+        <div class="small">Delivery code <strong class="fs-5" style="letter-spacing:.2em">{{ album.delivery_otp }}</strong><div class="muted">Tell it to the courier only when you hold the album.</div></div>
+      </div>
+    {% endif %}
+    <div class="small mt-3">{% if album.is_delayed %}<span class="text-danger">Taking longer than promised? We are sorry.</span> {% endif %}Questions or a late album? <a href="{% url 'help_center' %}?album={{ album.pk }}{% if album.is_delayed %}&topic=late{% endif %}">Ask in the Help center</a>.</div>
+  </div>
+  {% endif %}
+  {% endif %}
+
+  {% if not delivered %}
+  <div class="gal-layout{% if can_pick and not designs %} has-side{% endif %}">
+    {% if can_pick and not designs %}
+    <aside class="gal-side" id="bkSide" aria-label="Album preview">
+      <div class="bk-head">
+        <b><i class="bi bi-book"></i> Your album</b>
+        <span class="seg alb-layouts" role="group" aria-label="Photos per page"><button type="button" data-n="1" {% if album.layout == 1 %}class="on"{% endif %}>1</button><button type="button" data-n="2" {% if album.layout == 2 %}class="on"{% endif %}>2</button><button type="button" data-n="4" {% if album.layout == 4 %}class="on"{% endif %}>4</button></span>
+      </div>
+      <p class="bk-pick-hint muted">Choose how many photos go on each page: <strong>1</strong>, <strong>2</strong> or <strong>4</strong>. {{ b.photographer.name.split.0 }} follows your choice.</p>
+      <div class="bk-wrap" id="bkWrap" tabindex="0" aria-label="Album preview. Use the left and right arrow keys to turn pages">
+        <div class="bk" id="bk"><div class="bk-pg"></div><div class="bk-pg"></div></div>
+        <div class="bk-empty" id="bkEmpty">Tap the heart on a photo and it appears on your pages.</div>
+      </div>
+      <div class="bk-nav">
+        <button type="button" class="bk-arrow" id="bkPrev" aria-label="Previous pages"><i class="bi bi-chevron-left"></i></button>
+        <div class="text-center"><div id="bkTitle" class="fw-semibold small"></div><div id="bkMeta" class="small muted"></div></div>
+        <button type="button" class="bk-arrow" id="bkNext" aria-label="Next pages"><i class="bi bi-chevron-right"></i></button>
+      </div>
+      <div class="bk-dots" id="bkDots"></div>
+      {% if can_pdf %}<a class="btn btn-outline-dark btn-sm mt-2" href="{% url 'album_pdf' b.pk %}"><i class="bi bi-file-earmark-pdf"></i> Download as PDF</a>{% endif %}
+      <p class="small muted mb-0 mt-2">Only an idea of the layout. {{ b.photographer.name.split.0 }} makes the real design for you to approve.</p>
+    </aside>
+    {% endif %}
+    <div class="gal-main">
+      {% if photos %}
+      {% if designs %}<details class="panel mb-3 gal-fold"><summary class="fw-semibold">Your shoot photos ({{ photos|length }}) <span class="muted small">&middot; tap to look through them</span></summary><div class="mt-3">{% endif %}
+      <div class="gal-tools">
+        <span class="seg alb-layouts" role="group" aria-label="Show"><button type="button" class="on" data-show="all">All <span id="cntAll">{{ photos|length }}</span></button>{% if can_pick %}<button type="button" data-show="fav">Picked <span id="cntFav">{{ favs }}</span></button>{% endif %}</span>
+      </div>
+      <div class="gal-masonry" id="galGrid">
+        {% for ph in photos %}
+        <figure class="gal-item{% if ph.is_favourite %} is-fav{% endif %}" data-id="{{ ph.pk }}">
+          <img src="{{ ph.image.url }}" alt="Photo {{ forloop.counter }}" loading="lazy" data-full="{{ ph.image.url }}">
+          {% if can_pick %}<button type="button" class="gal-heart" aria-label="Favourite photo {{ forloop.counter }}" aria-pressed="{% if ph.is_favourite %}true{% else %}false{% endif %}" {% if locked %}disabled{% endif %}><i class="bi {% if ph.is_favourite %}bi-heart-fill{% else %}bi-heart{% endif %}"></i></button>{% endif %}
+        </figure>
+        {% endfor %}
+      </div>
+      {% if designs %}</div></details>{% endif %}
+      {% else %}
+      <div class="panel text-center"><h3>No photos yet</h3><p class="muted mb-0">{{ b.photographer.name.split.0 }} has not added photos yet. This page updates by itself when they do.</p></div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if can_pick and not locked %}
+  <form method="post" action="{% url 'gallery_submit' b.pk %}" class="pick-fab" id="pickFab">{% csrf_token %}<input type="hidden" name="layout" id="pickLayout" value="{{ album.layout }}">
+    <div class="pf-info"><div class="pf-top"><strong id="pickCount">{{ favs }}</strong><span class="muted"> / {{ limit }}</span></div><div class="pf-bar"><i id="pfFill" style="width:0"></i></div></div>
+    <button class="btn btn-primary" id="pickSubmit" type="submit" {% if favs < min_picks %}disabled{% endif %}>Send selection</button>
+  </form>
+  {% endif %}
+  {% endif %}
+</div>
+{% if not delivered %}
+<div class="gal-light" id="galLight" hidden role="dialog" aria-label="Photo viewer">
+  <button type="button" class="gl-close" aria-label="Close">&times;</button>
+  <button type="button" class="gl-nav gl-prev" aria-label="Previous photo"><i class="bi bi-chevron-left"></i></button>
+  <img alt="">
+  <button type="button" class="gl-nav gl-next" aria-label="Next photo"><i class="bi bi-chevron-right"></i></button>
+  <div class="gl-bar"><span id="glCount"></span><button type="button" class="gl-heart" id="glHeart" hidden><i class="bi bi-heart"></i> <span>Pick</span></button></div>
+</div>
+<script>
+(function () {
+  var root = document.getElementById('galRoot'); if (!root) { return; }
+  var grid = document.getElementById('galGrid');
+  var listen = window.ppListen || function (t, n, f, o) { t.addEventListener(n, f, o); };
+  var canPick = !!document.getElementById('pickBar') && !!root.querySelector('.gal-heart');
+  var open = root.dataset.pick === '1', limit = +root.dataset.limit || 0, minPicks = +root.dataset.min || 0;
+  var pages = +root.dataset.pages || 0, aspect = parseFloat(root.dataset.aspect) || 0.75;
+  function csrf() { var m = document.cookie.match(/csrftoken=([^;]+)/); return m ? m[1] : ''; }
+  function figs() { return grid ? Array.prototype.slice.call(grid.querySelectorAll('.gal-item')) : []; }
+  function favs() { return figs().filter(function (f) { return f.classList.contains('is-fav'); }); }
+
+  /* ---- the book preview: a closed cover first, built from what is picked right now ---- */
+  var bk = document.getElementById('bk'), per = +root.dataset.layout || 2, at = -1;      // -1 = front cover, 0.. = spreads, last = back cover
+  var wrap = document.getElementById('bkWrap');
+  if (bk) { bk.style.setProperty('--a', aspect); }
+  function urlsNow() { return favs().map(function (f) { return f.querySelector('img').dataset.full; }); }
+  function totalOf(urls) { return Math.max(1, Math.ceil(urls.length / (per * 2))); }
+  function numText(n, total) {
+    var m = root.dataset.num;
+    if (m === 'dash') { return '\u2014 ' + n + ' \u2014'; }
+    if (m === 'dot') { return '\u00B7 ' + n + ' \u00B7'; }
+    if (m === 'of') { return n + ' / ' + total; }
+    if (m === 'mono') { return (n < 10 ? '0' : '') + n; }
+    return String(n);
+  }
+  function coverEl(front, urls) {
+    var d = document.createElement('div'); d.className = 'bk-cvin ' + (front ? 'front' : 'back');
+    if (front) {
+      var src = root.dataset.cover || (urls && urls[0]) || '';
+      d.innerHTML = (src ? '<span class="bk-cv-photo"><img alt=""></span>' : '') + '<span class="bk-cv-title"><b></b><em></em></span>';
+      if (src) { d.querySelector('img').src = src; }
+      d.querySelector('b').textContent = root.dataset.coverName || 'Your album';
+      d.querySelector('em').textContent = root.dataset.coverSize || '';
+    } else {
+      d.innerHTML = '<span class="bk-cv-mark"><i>P</i><b>PhotoPholio</b><em></em></span>';
+      d.querySelector('em').textContent = (root.dataset.pages ? root.dataset.pages + ' pages' : '');
+    }
+    return d;
+  }
+  function fillPage(pg, s, side, urls) {
+    var total = totalOf(urls); pg.innerHTML = ''; pg.className = pg.className.replace(/\s*bk-(cv|none)/g, '');
+    if (s === -1 || s === total) {
+      var cover = (s === -1 && side === 1) || (s === total && side === 0);
+      if (!cover) { pg.classList.add('bk-none'); return; }
+      pg.classList.add('bk-cv'); pg.appendChild(coverEl(s === -1, urls)); return;
+    }
+    for (var i = 0; i < per; i++) {
+      var u = urls[(s * 2 + side) * per + i], slot = document.createElement('span'); slot.className = 'bk-slot';
+      if (u) { var im = document.createElement('img'); im.src = u; im.alt = ''; slot.appendChild(im); } else { slot.classList.add('blank'); }
+      pg.appendChild(slot);
+    }
+    var pn = document.createElement('span'); pn.className = 'bk-pn'; pn.textContent = numText(s * 2 + side + 1, total * 2); if (root.dataset.num === 'ring') { pn.classList.add('ring'); } pg.appendChild(pn);
+  }
+  function pose(urls) { bk.dataset.pose = at === -1 ? 'front' : (at === totalOf(urls) ? 'back' : 'open'); }
+  function bookUI(urls) {
+    var total = totalOf(urls), used = Math.max(2, total * 2), left = at * 2 + 1;
+    document.getElementById('bkEmpty').hidden = urls.length > 0;
+    var t = document.getElementById('bkTitle'), m = document.getElementById('bkMeta');
+    t.textContent = at === -1 ? 'Front cover' : (at === total ? 'Back cover' : 'Pages ' + left + '\u2013' + (left + 1));
+    m.textContent = urls.length ? urls.length + ' photo' + (urls.length === 1 ? '' : 's') + ' \u00B7 ' + used + (pages ? ' of ' + pages : '') + ' pages used' : 'Pick up to ' + limit;
+    m.classList.toggle('text-danger', !!pages && used > pages);
+    document.getElementById('bkPrev').disabled = at <= -1; document.getElementById('bkNext').disabled = !urls.length || at >= total;
+    var dots = document.getElementById('bkDots'); dots.innerHTML = '';
+    if (urls.length) { for (var d = -1; d <= total; d++) { var b = document.createElement('button'); b.type = 'button'; b.setAttribute('aria-label', d === -1 ? 'Front cover' : (d === total ? 'Back cover' : 'Pages ' + (d * 2 + 1) + ' to ' + (d * 2 + 2))); if (d === at) { b.className = 'on'; } b.dataset.i = d; dots.appendChild(b); } }
+  }
+  var flip = null;
+  function endFlip() { if (flip) { clearTimeout(flip.t); flip.done(); flip = null; } }
+  function drawBook() {
+    if (!bk) { return; }
+    endFlip();
+    var urls = urlsNow(), total = totalOf(urls); if (!urls.length) { at = -1; } at = Math.min(at, total);
+    bk.className = 'bk n' + per;
+    var pgs = bk.querySelectorAll(':scope > .bk-pg');
+    fillPage(pgs[0], at, 0, urls); fillPage(pgs[1], at, 1, urls); pose(urls);
+    bookUI(urls);
+  }
+  /* turn the page: the leaf holds the old page on its front and the new facing page on its back */
+  function goTo(n) {
+    if (!bk) { return; }
+    endFlip();
+    var urls = urlsNow(), total = totalOf(urls); n = urls.length ? Math.max(-1, Math.min(total, n)) : -1;
+    if (n === at) { return; }
+    var fwd = n > at, from = at, pgs = bk.querySelectorAll(':scope > .bk-pg'), keep = fwd ? pgs[0] : pgs[1], moving = fwd ? pgs[1] : pgs[0];
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    at = n;
+    if (reduce) { drawBook(); return; }
+    var leaf = document.createElement('div'); leaf.className = 'bk-leaf ' + (fwd ? 'fwd' : 'back');
+    var front = document.createElement('div'), back = document.createElement('div'); front.className = 'bk-pg bk-face'; back.className = 'bk-pg bk-face bk-rev';
+    fillPage(front, from, fwd ? 1 : 0, urls);
+    fillPage(back, at, fwd ? 0 : 1, urls);
+    leaf.appendChild(front); leaf.appendChild(back); bk.appendChild(leaf);
+    fillPage(moving, at, fwd ? 1 : 0, urls);
+    pose(urls); bookUI(urls);
+    var finished = false;
+    function done() { if (finished) { return; } finished = true; fillPage(keep, at, fwd ? 0 : 1, urls); if (leaf.parentNode) { leaf.parentNode.removeChild(leaf); } }
+    flip = {done: done, t: setTimeout(function () { done(); flip = null; }, 720)};
+    void leaf.offsetWidth;
+    leaf.classList.add('turn');
+  }
+  if (bk) {
+    document.querySelectorAll('#bkSide .alb-layouts button').forEach(function (b) { b.addEventListener('click', function () { document.querySelectorAll('#bkSide .alb-layouts button').forEach(function (x) { x.classList.toggle('on', x === b); }); per = +b.dataset.n; var pl = document.getElementById('pickLayout'); if (pl) { pl.value = per; } at = at === -1 ? -1 : 0; drawBook(); }); });
+    document.getElementById('bkPrev').addEventListener('click', function () { goTo(at - 1); });
+    document.getElementById('bkNext').addEventListener('click', function () { goTo(at + 1); });
+    document.getElementById('bkDots').addEventListener('click', function (e) { var b = e.target.closest('button'); if (b) { goTo(+b.dataset.i); } });
+    wrap.addEventListener('keydown', function (e) { if (e.key === 'ArrowLeft') { goTo(at - 1); } else if (e.key === 'ArrowRight') { goTo(at + 1); } });
+    var sx = null;
+    wrap.addEventListener('touchstart', function (e) { sx = e.touches[0].clientX; }, {passive: true});
+    wrap.addEventListener('touchend', function (e) { if (sx === null) { return; } var dx = e.changedTouches[0].clientX - sx; sx = null; if (Math.abs(dx) > 40) { goTo(at + (dx < 0 ? 1 : -1)); } }, {passive: true});
+  }
+
+  /* ---- counters ---- */
+  function counts() {
+    var n = favs().length, c = document.getElementById('pickCount'); if (c) { c.textContent = n; }
+    var cf = document.getElementById('cntFav'); if (cf) { cf.textContent = n; }
+    var sub = document.getElementById('pickSubmit');
+    if (sub) { sub.disabled = n < minPicks; sub.textContent = n < minPicks ? 'Pick ' + (minPicks - n) + ' more' : 'Send selection'; }
+    var fill = document.getElementById('pfFill'); if (fill && limit) { fill.style.width = Math.min(100, Math.round(n * 100 / limit)) + '%'; fill.classList.toggle('ok', n >= minPicks); }
+    drawBook();
+  }
+
+  /* ---- hearts ---- */
+  function setFav(fig, on) {
+    fig.classList.toggle('is-fav', on);
+    var h = fig.querySelector('.gal-heart');
+    if (h) { h.setAttribute('aria-pressed', on ? 'true' : 'false'); h.firstElementChild.className = 'bi ' + (on ? 'bi-heart-fill' : 'bi-heart'); }
+  }
+  function toggle(fig) {
+    var err = document.getElementById('pickError'), want = !fig.classList.contains('is-fav');
+    if (want && favs().length >= limit) { err.textContent = 'This album holds up to ' + limit + ' photos.'; return Promise.resolve(); }
+    setFav(fig, want); counts(); err.textContent = '';                       // instant, then confirmed by the server
+    var url = root.dataset.toggleUrl.replace('/0/favourite/', '/' + fig.dataset.id + '/favourite/');
+    return fetch(url, {method: 'POST', headers: {'X-CSRFToken': csrf()}, credentials: 'same-origin'}).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.ok) { setFav(fig, !want); counts(); err.textContent = d.error; return; }
+      setFav(fig, d.favourite); counts();
+    }).catch(function () { setFav(fig, !want); counts(); err.textContent = 'Could not save. Check your connection and try again.'; });
+  }
+
+  /* ---- viewer ---- */
+  var light = document.getElementById('galLight'), big = light.querySelector('img'), cur = -1, shown = [];
+  function show(i) {
+    shown = figs().filter(function (f) { return f.offsetParent !== null; });
+    if (!shown.length) { return; }
+    cur = (i + shown.length) % shown.length;
+    var f = shown[cur]; big.src = f.querySelector('img').dataset.full; light.hidden = false;
+    document.getElementById('glCount').textContent = (cur + 1) + ' / ' + shown.length;
+    var gh = document.getElementById('glHeart');
+    if (canPick && !f.querySelector('.gal-heart').disabled) { gh.hidden = false; gh.classList.toggle('on', f.classList.contains('is-fav')); gh.firstElementChild.className = 'bi ' + (f.classList.contains('is-fav') ? 'bi-heart-fill' : 'bi-heart'); gh.lastElementChild.textContent = f.classList.contains('is-fav') ? 'Picked' : 'Pick'; } else { gh.hidden = true; }
+  }
+  function hide() { light.hidden = true; big.removeAttribute('src'); }
+  if (grid) {
+    grid.addEventListener('click', function (e) {
+      var fig = e.target.closest('.gal-item'); if (!fig) { return; }
+      if (e.target.closest('.gal-heart')) { if (!e.target.closest('.gal-heart').disabled && canPick) { toggle(fig); } return; }
+      show(figs().filter(function (f) { return f.offsetParent !== null; }).indexOf(fig));
+    });
+  }
+  var dbox = document.getElementById('designBox');
+  if (dbox) { dbox.addEventListener('click', function (e) { var im = e.target.closest('img'); if (im) { big.src = im.dataset.full; light.hidden = false; document.getElementById('glCount').textContent = ''; document.getElementById('glHeart').hidden = true; shown = []; } }); }
+  light.addEventListener('click', function (e) {
+    if (e.target.closest('.gl-prev')) { show(cur - 1); } else if (e.target.closest('.gl-next')) { show(cur + 1); }
+    else if (e.target.closest('#glHeart')) { var f = shown[cur]; if (f) { toggle(f).then(function () { show(cur); }); } }
+    else if (!e.target.closest('.gl-bar')) { hide(); }
+  });
+  listen(document, 'keydown', function (e) {
+    if (light.hidden) { return; }
+    if (e.key === 'Escape') { hide(); } else if (e.key === 'ArrowLeft') { show(cur - 1); } else if (e.key === 'ArrowRight') { show(cur + 1); }
+  });
+
+  /* ---- all / picked ---- */
+  var tools = root.querySelector('.gal-tools');
+  if (tools) { tools.addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b) { return; } tools.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); }); grid.classList.toggle('only-fav', b.dataset.show === 'fav'); }); }
+  counts();
+})();
+</script>
+{% endif %}
+{% endblock %}

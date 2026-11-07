@@ -24,6 +24,21 @@
   <p>You pay the photographer's price for the shoot (one day's price for each day) <strong>plus travel and stay</strong> if the event is outside their city. You see the full total before you send a request, and there is <strong>no extra fee for you</strong>.
     PhotoPholio keeps <strong>{{ commission }}%</strong> of the photographer's price as commission, and the photographer receives the rest and all of the travel money. The photographer's share is held until your shoot is completed.</p>
 
+  <h2 class="mt-4 mb-3" style="font-size:1.6rem">Printed albums</h2>
+  <p>An album is optional and is paid for with the booking. It is priced separately from the photographer and never changes the shoot price or its refund.</p>
+  <ul>
+    <li><strong>Where the album price goes.</strong> It covers the printing and delivery cost. What is left is shared: the photographer who designs your album gets <strong>{{ album_share }}%</strong> as a design fee, and PhotoPholio keeps the other <strong>{{ album_rest }}%</strong> as its album commission.</li>
+    <li><strong>Cancelling.</strong> The album is only made after the shoot. If the booking is cancelled, the album is cancelled too and you get the <strong>whole album price back</strong>, so nobody keeps the commission.</li>
+    <li><strong>Once you approve the design,</strong> it goes to print and cannot be cancelled. Up to {{ album_rounds }} rounds of changes are free before that.</li>
+    <li><strong>Delivery.</strong> Your album reaches you within <strong>{{ album_days }} days</strong> of your approval. If it is late, write to us in the <a href="{% url 'help_center' %}">Help center</a> and we will tell you why.</li>
+    <li><strong>The photographer's design fee</strong> is released when you approve the design, and it is paid with their next payout.</li>
+  </ul>
+
+  <h2 class="mt-4 mb-3" id="privacy" style="font-size:1.6rem">Your photos stay yours</h2>
+  <p>The photos from your shoot are private to you and your photographer. Nobody else can open your gallery.</p>
+  <p>After your final delivery, whether it is the digital photos, the album or both, the photographer <strong>must not keep, share, post, sell or reuse them</strong> anywhere (portfolio, social media, ads, contests, stock sites) without your clear written permission. They must also delete the copies from their phone, computer and cloud storage.</p>
+  <p>This is a rule for every photographer on PhotoPholio. If you find your photos used without your permission, tell us in the <a href="{% url 'help_center' %}">Help center</a>. We look into every report. A photographer who misuses your photos is removed from PhotoPholio, and we can give you the details you need to take legal action under the law that applies.</p>
+
   <h2 class="mt-4 mb-3" style="font-size:1.6rem">Changing your date</h2>
   <p>Need a different day? Once the photographer has accepted, you can ask to move your booking, as long as the shoot is <strong>{{ resched_days }} or more days away</strong>. They need to agree and be free on the new day. Your price and payment stay as they are, and a booking can be moved <strong>{{ resched_max }} time{{ resched_max|pluralize }}</strong>. If they say no, you keep your original date. If you cancel later, the refund is worked out from the date your booking has then.</p>
 

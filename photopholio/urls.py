@@ -3,7 +3,7 @@ from django.urls import path
 
 from django.urls import reverse_lazy
 
-from . import views
+from . import gallery, views
 from .forms import NewPasswordForm, PasswordResetRequestForm
 
 urlpatterns = [
@@ -35,6 +35,9 @@ urlpatterns = [
     path("photographer/availability/<int:pk>/remove/", views.pro_unblock, name="pro_unblock"),
     path("photographer/reviews/", views.pro_reviews, name="pro_reviews"),
     path("photographer/reviews/<int:pk>/reply/", views.pro_review_reply, name="pro_review_reply"),
+    path("photographer/bookings/<int:pk>/gallery/", gallery.pro_gallery, name="pro_gallery"),
+    path("photographer/bookings/<int:pk>/design/", gallery.pro_design_submit, name="pro_design_submit"),
+    path("photographer/gallery/photos/<int:pk>/delete/", gallery.pro_gallery_delete, name="pro_gallery_delete"),
     path("photographer/bookings/<int:pk>/delivery/", views.pro_delivery, name="pro_delivery"),
     path("photographer/reschedules/<int:pk>/<slug:action>/", views.pro_reschedule_action, name="pro_reschedule_action"),
     path("photographer/bookings/<int:pk>/cancel/", views.pro_booking_cancel, name="pro_booking_cancel"),
@@ -62,10 +65,20 @@ urlpatterns = [
     path("notifications/<int:pk>/open/", views.notification_open, name="notification_open"),
     path("notifications/<int:pk>/toggle/", views.notification_toggle, name="notification_toggle"),
     path("notifications/clear-all/", views.notification_clear_all, name="notification_clear_all"),
+    path("notifications/bulk/", views.notification_bulk, name="notification_bulk"),
     path("notifications/<int:pk>/clear/", views.notification_clear, name="notification_clear"),
     path("notifications/<int:pk>/restore/", views.notification_restore, name="notification_restore"),
     path("notifications/<int:pk>/delete/", views.notification_delete, name="notification_delete"),
+    path("albums/", views.albums_list, name="albums"),
+    path("albums/<slug:slug>/", views.album_detail, name="album_detail"),
     path("bookings/", views.my_bookings, name="my_bookings"),
+    path("bookings/<int:pk>/gallery/", gallery.my_gallery, name="my_gallery"),
+    path("bookings/<int:pk>/gallery/<int:photo_pk>/favourite/", gallery.gallery_toggle, name="gallery_toggle"),
+    path("bookings/<int:pk>/gallery/submit/", gallery.gallery_submit, name="gallery_submit"),
+    path("bookings/<int:pk>/design/<slug:decision>/", gallery.design_decide, name="design_decide"),
+    path("bookings/<int:pk>/gallery/reopen/", gallery.gallery_reopen, name="gallery_reopen"),
+    path("bookings/<int:pk>/album.pdf", gallery.album_pdf_download, name="album_pdf"),
+    path("help/", gallery.help_center, name="help_center"),
     path("bookings/<int:pk>/cancel/", views.booking_cancel, name="booking_cancel"),
     path("saved/", views.my_favourites, name="my_favourites"),
     path("saved/<slug:slug>/toggle/", views.favourite_toggle, name="favourite_toggle"),

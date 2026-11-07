@@ -39,6 +39,21 @@
     </tbody></table></div>
   {% else %}<p class="muted">Nothing here yet. Your earnings show up once a customer pays for a booking.</p>{% endif %}
 
+  {% if albums %}
+  <h2 class="mt-4 mb-1" style="font-size:1.4rem">Album design fees</h2>
+  <p class="muted small mb-3">Your fee for designing an album is yours once the customer approves the design. It is paid with your next payout.
+    Waiting for approval: <strong>&#8377;{{ album_fees.held }}</strong> &middot; Being paid: <strong>&#8377;{{ album_fees.ready }}</strong> &middot; Paid: <strong>&#8377;{{ album_fees.paid }}</strong></p>
+  <div class="table-responsive"><table class="table align-middle">
+    <thead><tr><th>Album</th><th>Customer</th><th class="text-end">Your fee</th><th>Status</th></tr></thead>
+    <tbody>{% for o in albums %}
+      <tr><td>{{ o.style_name }} &middot; {{ o.pages }} pages</td><td>{{ o.booking.user.first_name|default:o.booking.user.username }}</td>
+        <td class="text-end"><strong>&#8377;{{ o.design_fee }}</strong></td>
+        <td>{% if o.payout_status == 'held' %}After the customer approves
+            {% elif o.payout_status == 'ready' %}Ready, paid with your next payout
+            {% elif o.payout_status == 'paid' %}Paid{% if o.payout_paid_at %} {{ o.payout_paid_at|date:"j M Y" }}{% endif %}{% if o.payout_reference %}<div class="small muted">Ref {{ o.payout_reference }}</div>{% endif %}
+            {% endif %}</td></tr>{% endfor %}</tbody></table></div>
+  {% endif %}
+
   {% if upcoming %}
   <h2 class="mt-4 mb-2" style="font-size:1.2rem">Coming up, not paid yet</h2>
   <ul class="ps-3">{% for b in upcoming %}{% with e=b.earnings %}<li>{{ b.date_label }}, {{ b.user.first_name|default:b.user.username }}: you would earn &#8377;{{ e.payout }} ({{ b.get_status_display|lower }}).</li>{% endwith %}{% endfor %}</ul>

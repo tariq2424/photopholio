@@ -20,6 +20,7 @@ document.addEventListener('click', function (e) {
   label();
   function apply(next) {
     document.documentElement.setAttribute('data-bs-theme', next);
+    var cs = document.querySelector('meta[name="color-scheme"]'); if (cs) cs.setAttribute('content', next);
     try { localStorage.setItem('pp-theme', next); } catch (e) {}
     label();
   }
@@ -28,20 +29,10 @@ document.addEventListener('click', function (e) {
     var root = document.documentElement;
     var calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (document.startViewTransition && !calm) {
-      // The new theme grows out of the button like a circle of light.
-      var r = button.getBoundingClientRect();
-      var x = r.left + r.width / 2, y = r.top + r.height / 2;
-      var radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
-      var vt = document.startViewTransition(function () { apply(next); });
-      vt.ready.then(function () {
-        root.animate({clipPath: ['circle(0px at ' + x + 'px ' + y + 'px)', 'circle(' + radius + 'px at ' + x + 'px ' + y + 'px)']},
-          {duration: 1100, easing: 'cubic-bezier(.65,0,.35,1)', pseudoElement: '::view-transition-new(root)'});
-      }).catch(function () {});
+      document.startViewTransition(function () { apply(next); });   // a short crossfade: one paint, no per-element transitions
       return;
     }
-    root.classList.add('theme-anim');          // fade the colours instead of snapping
     apply(next);
-    setTimeout(function () { root.classList.remove('theme-anim'); }, 950);
   });
 })();
 
@@ -74,37 +65,26 @@ document.addEventListener('click', function (e) {
     t.show();
   }
   Array.prototype.forEach.call(host.querySelectorAll('.toast'), show);
-  window.ppToast = function (type, text) {
+  icons.notify = 'bi-bell-fill';
+  window.ppToastShow = show;
+  // opts: {delay: ms, href: link for the whole message, title: bold first line}
+  window.ppToast = function (type, text, opts) {
+    opts = opts || {};
     type = icons[type] ? type : 'info';
     var el = document.createElement('div');
     el.className = 'toast pp-toast t-' + type;
     el.setAttribute('role', type === 'danger' ? 'alert' : 'status');
-    el.setAttribute('data-bs-delay', type === 'danger' || type === 'warning' ? '9000' : '5500');
+    el.setAttribute('data-bs-delay', String(opts.delay || (type === 'danger' || type === 'warning' ? 9000 : 5500)));
     el.innerHTML = '<div class="toast-body"><i class="bi ' + icons[type] + ' pp-toast-ico" aria-hidden="true"></i><span class="pp-toast-msg"></span>' +
       '<button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button></div><div class="pp-toast-bar"></div>';
-    el.querySelector('.pp-toast-msg').textContent = text;
+    var msg = el.querySelector('.pp-toast-msg');
+    var holder = msg;
+    if (opts.href) { holder = document.createElement('a'); holder.className = 'pp-toast-link'; holder.href = opts.href; msg.appendChild(holder); }
+    if (opts.title) { var t = document.createElement('b'); t.textContent = opts.title; holder.appendChild(t); }
+    if (text) { var s = document.createElement('span'); s.textContent = text; holder.appendChild(s); }
     host.appendChild(el);
     show(el);
   };
-})();
-
-// Bell: refresh the unread number now and then, so a new notification shows up without a reload.
-(function () {
-  var bell = document.getElementById('bell');
-  var badge = document.getElementById('bellBadge');
-  if (!bell || !badge || !window.fetch) return;
-  function refresh() {
-    if (document.hidden) return;
-    fetch(bell.dataset.countUrl, {credentials: 'same-origin', headers: {'X-Requested-With': 'fetch'}})
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) {
-        if (!d) return;
-        badge.hidden = !d.unread;
-        badge.textContent = d.unread > 9 ? '9+' : d.unread;
-      }).catch(function () {});
-  }
-  setInterval(refresh, 60000);
-  document.addEventListener('visibilitychange', refresh);
 })();
 
 // Clearing from the bell works without reloading the page. Without JavaScript the form still posts normally.
@@ -118,6 +98,19 @@ document.addEventListener('click', function (e) {
     list.innerHTML = '<div class="bell-empty"><i class="bi bi-bell-slash" aria-hidden="true"></i><span>You are all caught up.</span><a href="' + bell.dataset.listUrl + '?filter=cleared">View cleared</a></div>';
     var head = bell.querySelector('.bell-head-actions'); if (head) head.hidden = true;
   }
+  // Rows glide out to the right, then close up. The notification stays in History (it is only cleared, not deleted).
+  window.ppSlideOut = function (rows, done) {
+    rows = rows.filter(Boolean);
+    var calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!rows.length || calm) { rows.forEach(function (r) { r.remove(); }); if (done) done(); return; }
+    rows.forEach(function (r, i) {
+      r.style.setProperty('--d', (i * 60) + 'ms');
+      r.style.maxHeight = r.offsetHeight + 'px';
+      void r.offsetWidth;
+      r.classList.add('bell-out');
+    });
+    setTimeout(function () { rows.forEach(function (r) { r.remove(); }); if (done) done(); }, 380 + rows.length * 60);
+  };
   bell.addEventListener('submit', function (e) {
     var form = e.target.closest('form[data-clear]');
     if (!form) return;
@@ -127,15 +120,15 @@ document.addEventListener('click', function (e) {
       .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
       .then(function (d) {
         setBadge(d.unread);
-        if (form.dataset.clear === 'all' || !d.remaining) { empty(); return; }
-        var row = form.closest('.bell-row'); if (row) row.remove();
+        if (form.dataset.clear === 'all' || !d.remaining) { ppSlideOut(Array.prototype.slice.call(bell.querySelectorAll('.bell-row')), empty); return; }
+        ppSlideOut([form.closest('.bell-row')]);
       })
       .catch(function () { form.submit(); });
   });
 })();
 
 // Small touches: sections that rise into view, numbers that count up.
-(function () {
+window.ppReveal = function () {
   var calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (calm || !('IntersectionObserver' in window)) return;
   var groups = ['.kinds .kind', '.grid-cards .pcard-wrap', '.flow li', '.trust-row > div', '.cta-band', '.section-head', '.panel', '.pkg'];
@@ -166,4 +159,16 @@ document.addEventListener('click', function (e) {
     }
     requestAnimationFrame(step);
   }
-})();
+};
+window.ppReveal();
+
+
+// "Clear all" on the notifications page: every row glides out to the right, then the page reloads with the list cleared.
+document.addEventListener('submit', function (e) {
+  var f = e.target;
+  if (!f || !f.hasAttribute || !f.hasAttribute('data-slide-all') || f.dataset.sliding || !window.ppSlideOut) { return; }
+  var rows = Array.prototype.slice.call(document.querySelectorAll('.notif-row'));
+  if (!rows.length) { return; }
+  e.preventDefault(); e.stopImmediatePropagation(); f.dataset.sliding = '1';
+  ppSlideOut(rows, function () { f.submit(); });
+}, true);

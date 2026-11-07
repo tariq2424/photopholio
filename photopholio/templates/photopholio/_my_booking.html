@@ -5,15 +5,17 @@
       <span class="muted small">{{ b.photographer.get_specialities_display }} in {{ b.photographer.city.name }} &nbsp;|&nbsp; {% if b.package_name %}{{ b.package_name }}, {% endif %}&#8377;{{ b.amount }}{% if b.is_multi_day %} ({{ b.days }} days &times; &#8377;{{ b.day_rate }}){% endif %}{% if b.travel_fee %} incl. &#8377;{{ b.travel_fee }} travel{% endif %}{% if b.is_paid and b.status != 'cancelled' %} paid{% endif %}</span>
       <div class="small"><strong>{{ b.date_label }}</strong>{% if b.start_time %} &middot; {{ b.start_time|time:"g:i a" }}{% endif %}</div>
       {% include 'photopholio/_event_where.html' with b=b %}
+      {% if b.album %}<div class="small"><i class="bi bi-journal-richtext"></i> <strong>Album</strong> &middot; {{ b.album.style_name }} &middot; {{ b.album.pages }} pages &middot; &#8377;{{ b.album.price }}</div>
+      {% elif b.deliverable == 'digital' and b.status != 'cancelled' and b.status != 'declined' %}<div class="small"><i class="bi bi-images"></i> <strong>Digital photos</strong></div>{% endif %}
       {% include 'photopholio/_shoot_tracker.html' with b=b role='customer' %}
       {% if b.awaiting_confirmation and not b.has_open_dispute %}
-        <div class="small mt-2"><strong>{{ b.photographer.name }} marked the shoot as completed.</strong> Please confirm that it took place. If you do nothing, it is confirmed automatically after {{ b.confirm_deadline|date:"j M, g:i a" }}.
+        <div class="small mt-2"><strong>Shoot done?</strong> Please confirm. Auto-confirms {{ b.confirm_deadline|date:"j M, g:i a" }}.
           <form method="post" action="{% url 'booking_confirm_done' b.pk %}" class="d-inline">{% csrf_token %}<button class="btn btn-primary btn-sm ms-1" type="submit">Confirm shoot completed</button></form></div>
       {% endif %}
-      {% if b.dispute_status == 'open' %}<div class="small text-danger mt-1"><strong>You reported a problem.</strong> The admin is reviewing it. No decision has been made yet, and the photographer is not paid until then.</div>
+      {% if b.dispute_status == 'open' %}<div class="small text-danger mt-1"><strong>You reported a problem.</strong> The admin is reviewing it. Photographer's payout is on hold.</div>
       {% elif b.dispute_status == 'resolved' and b.dispute_outcome != 'closed' %}<div class="small muted mt-1">Your report was reviewed: {{ b.get_dispute_outcome_display }}. {{ b.dispute_note }}</div>{% endif %}
-      {% if b.tool %}<div class="small muted">Notes: {{ b.tool }}</div>{% endif %}
-      {% if b.status == 'pending' %}<div class="small muted">Waiting for {{ b.photographer.name }} to accept. You will not be charged until they do.</div>{% endif %}
+      {% if b.tool %}<div class="small muted clamp2" title="{{ b.tool }}"><i class="bi bi-card-text"></i> {{ b.tool }}</div>{% endif %}
+      {% if b.status == 'pending' %}<div class="small muted">Waiting for {{ b.photographer.name }} to accept. No charge until then.</div>{% endif %}
       {% if b.status == 'accepted' %}<div class="small"><strong>Accepted.</strong> Pay by {{ b.payment_deadline|date:"j M, g:i a" }} to confirm your date.</div>{% endif %}
       {% with rr=b.pending_reschedule %}{% if rr %}
         <div class="small"><strong>Reschedule requested:</strong> {{ rr.new_label }}. Waiting for {{ b.photographer.name }}; your booking stays on {{ b.date_label }} until then.
@@ -36,6 +38,7 @@
           </div>
         {% endif %}{% endwith %}
       {% endif %}
+      {% if b.gallery_count %}<div class="small mt-1"><i class="bi bi-lock-fill"></i> <a href="{% url 'my_gallery' b.pk %}"><strong>Open your private gallery</strong></a> <span class="muted">&middot; {{ b.gallery_count }} photo{{ b.gallery_count|pluralize }}{% if b.album and b.album.status == 'paid' %} &middot; {% if b.album.design_status == 'approved' %}design approved{% elif b.album.design_status == 'submitted' %}approve your design{% elif b.album.design_status == 'changes' %}changes sent{% elif b.album.selection_status == 'submitted' %}selection sent{% else %}pick your album photos{% endif %}{% endif %}</span></div>{% endif %}
       {% if b.status == 'completed' and b.delivery_link %}
         <div class="small mt-1"><i class="bi bi-images"></i> <a href="{{ b.delivery_link }}" target="_blank" rel="noopener noreferrer"><strong>Open your photos</strong></a>{% if b.delivery_note %} <span class="muted">&middot; {{ b.delivery_note }}</span>{% endif %}</div>
       {% elif b.status == 'completed' %}<div class="small muted">{{ b.photographer.name.split.0 }} hasn't shared the photos yet.</div>{% endif %}

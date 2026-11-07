@@ -7,7 +7,7 @@ from django.core.files.uploadedfile import UploadedFile
 from django.utils import timezone
 
 from . import availability, travel
-from .models import (BlockedDate, Booking, City, ContactUs, Feedback, Package, Payment, Photo, Photographer,
+from .models import (AlbumStyle, BlockedDate, Booking, City, ContactUs, Feedback, Package, Payment, Photo, Photographer,
                      Portfolio, State, UserProfile)
 from .accounts import authenticate_identifier
 from .roles import get_role
@@ -39,13 +39,21 @@ class RegisterForm(BootstrapMixin, UserCreationForm):
     role = forms.ChoiceField(choices=ROLE_CHOICES, widget=forms.RadioSelect, initial="customer", label="I am joining as")
     email = forms.EmailField(required=True)
     first_name = forms.CharField(max_length=60, required=True, label="Full name")
+    agree_rules = forms.BooleanField(required=False, label="I agree to the photo rules")
 
     class Meta:
         model = User
         fields = ("role", "first_name", "email", "username", "password1", "password2")
 
+    def clean(self):
+        data = super().clean()
+        if data.get("role") == "photographer" and not data.get("agree_rules"):
+            self.add_error("agree_rules", "Please agree to the photo rules to join as a photographer.")
+        return data
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.order_fields(["agree_rules"])          # drawn by hand at the bottom of the page, so it is kept out of the normal order
         self.fields["first_name"].widget.attrs["autocomplete"] = "name"
         self.fields["email"].widget.attrs["autocomplete"] = "email"
         self.fields["username"].help_text = "You can log in with this or with your email."
@@ -61,7 +69,10 @@ class RegisterForm(BootstrapMixin, UserCreationForm):
         user.email = self.cleaned_data["email"]
         if commit:
             user.save()
-            UserProfile.objects.get_or_create(user=user, defaults={"role": self.cleaned_data["role"]})
+            from django.utils import timezone
+            is_pro = self.cleaned_data["role"] == "photographer"
+            UserProfile.objects.get_or_create(user=user, defaults={"role": self.cleaned_data["role"],
+                                                                   "rules_accepted_at": timezone.now() if is_pro else None})
         return user
 
 
@@ -85,8 +96,14 @@ class BookingForm(BootstrapMixin, forms.ModelForm):
     package = PackageChoice(queryset=Package.objects.none(), widget=forms.RadioSelect, empty_label=None,
                             label="Package", error_messages={"required": "Please choose a package."})
     event_state = forms.ModelChoiceField(queryset=State.objects.none(), label="State", empty_label="Choose a state")
+    # Optional add-on: a printed album or digital photos. Kept out of the Booking fields: the album is its own order.
+    deliverable = forms.ChoiceField(choices=[c for c in Booking.DELIVERABLE_CHOICES if c[0] != "digital"], initial="photos", required=False,
+                                    widget=forms.RadioSelect, label="After the shoot")
+    album_style = forms.ModelChoiceField(queryset=AlbumStyle.objects.none(), required=False, empty_label="Choose an album",
+                                         label="Album")
+    album_pages = forms.IntegerField(required=False, label="Pages")
     field_order = ["event_date", "end_date", "start_time", "package", "venue_name", "event_address",
-                   "event_state", "event_city", "event_pincode", "tool"]
+                   "event_state", "event_city", "event_pincode", "tool", "deliverable", "album_style", "album_pages"]
 
     class Meta:
         model = Booking
@@ -115,6 +132,7 @@ class BookingForm(BootstrapMixin, forms.ModelForm):
         self.fields["event_date"].widget.attrs["min"] = today.isoformat()
         self.fields["end_date"].widget.attrs["min"] = today.isoformat()
         self.fields["event_state"].queryset = State.objects.order_by("name")
+        self.fields["album_style"].queryset = AlbumStyle.objects.exclude(status="paused").exclude(status="soon").order_by("sort_order")
         # The venue is what the photographer needs to decide whether they can come, so these are not optional.
         for name in ("event_address", "event_city", "event_pincode"):
             self.fields[name].required = True
@@ -125,6 +143,22 @@ class BookingForm(BootstrapMixin, forms.ModelForm):
             self.fields["package"].initial = standard.pk
         else:
             del self.fields["package"]
+
+    def clean(self):
+        cleaned = self._clean_dates()
+        kind = cleaned.get("deliverable") or "photos"
+        cleaned["deliverable"] = kind
+        if kind == "album":
+            style = cleaned.get("album_style")
+            if not style:
+                self.add_error("album_style", "Choose the album you want.")
+            else:
+                allowed = [style.pages, style.pages + 10, style.pages + 20]
+                if cleaned.get("album_pages") not in allowed:
+                    cleaned["album_pages"] = style.pages
+        else:
+            cleaned["album_style"], cleaned["album_pages"] = None, None
+        return cleaned
 
     def clean_event_pincode(self):
         pin = (self.cleaned_data.get("event_pincode") or "").strip()
@@ -147,7 +181,7 @@ class BookingForm(BootstrapMixin, forms.ModelForm):
             raise forms.ValidationError("Choose a date that is today or later.")
         return date
 
-    def clean(self):
+    def _clean_dates(self):
         cleaned = super().clean()
         start, end = cleaned.get("event_date"), cleaned.get("end_date")
         if not start:

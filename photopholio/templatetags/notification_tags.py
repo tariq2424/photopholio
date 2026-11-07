@@ -17,3 +17,9 @@ def recent_notifications(user, limit=6):
     if not user.is_authenticated:
         return []
     return list(Notification.objects.filter(user=user, cleared=False)[:limit])
+
+
+@register.simple_tag
+def live_version(user):
+    from ..livever import live_version as lv
+    return lv(user)

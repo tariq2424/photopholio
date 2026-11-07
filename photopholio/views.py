@@ -11,18 +11,19 @@ from django.utils import timezone
 from django.contrib.auth.views import redirect_to_login
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.db.models import Count, F, Min, Q
+from django.db.models import Count, F, Max, Min, Q
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.views.decorators.http import require_POST
 
-from . import availability, booking_flow, emails, favourites, money, policy, reviews, tracking, travel
+from . import album_ops, availability, booking_flow, emails, favourites, money, policy, reviews, tracking, travel
 from .booking_flow import FlowError
 from .forms import (BlockDatesForm, BookingForm, CancelReasonForm, PackageForm, ContactForm, FeedbackForm, PaymentForm,
                     PhotoUploadForm, PhotographerProfileForm, PortfolioForm, RescheduleForm, ReplyForm,
                     ProfileForm, RegisterForm, ReportProblemForm, SmartLoginForm, TravelPolicyForm)
-from .models import (Notification, BlockedDate, Booking, City, Feedback, Package, Payment, Photo, Photographer,
-                     Portfolio, RescheduleRequest, State, UserProfile)
+from .models import (AlbumOrder, AlbumStyle, Notification, BlockedDate, Booking, City, Feedback, Package, Payment, Photo, Photographer,
+                     Portfolio, RescheduleRequest, ShootDay, ShootEvent, State, UserProfile)
 from .roles import get_role, photographer_required
 
 
@@ -42,7 +43,15 @@ def _parse_day(value):
 def home(request):
     featured = Photographer.objects.approved().select_related("city").prefetch_related("packages").order_by("-rating")[:6]
     cities = City.objects.filter(photographers__status="approved").distinct()
+    # one card per style: the top-rated approved photographer of that style and how many there are
+    approved = list(Photographer.objects.approved().select_related("city").order_by("-rating", "-pk"))
+    categories = []
+    for key, label in Photographer.SPECIALITY_CHOICES:
+        group = [x for x in approved if x.specialities == key]
+        if group:
+            categories.append({"key": key, "label": label, "count": len(group), "top": group[0]})
     context = {
+        "categories": categories,
         "featured": featured,
         "cities": cities,
         "specialities": Photographer.SPECIALITY_CHOICES,
@@ -134,7 +143,11 @@ def photographer_detail(request, slug):
             booking = form.save(commit=False)
             booking.user = request.user
             booking.photographer = photographer
+            booking.deliverable = form.cleaned_data["deliverable"]
             booking.save()
+            style = form.cleaned_data.get("album_style")
+            if booking.deliverable == "album" and style:
+                _create_album_order(booking, style, form.cleaned_data["album_pages"])
             emails.booking_requested(booking)
             messages.success(request, f"Request sent to {photographer.name}. You can pay once they accept it.", extra_tags="info")
             return redirect("my_bookings")
@@ -156,6 +169,15 @@ def photographer_detail(request, slug):
     return render(request, "photopholio/photographer_detail.html", context)
 
 
+def _create_album_order(booking, style, pages):
+    """Snapshots the album price and how it is shared, so later price changes never alter an existing order."""
+    price = style.total_for(pages)
+    pct, design, commission = money.album_split(price, style.print_cost)
+    return AlbumOrder.objects.create(
+        booking=booking, style=style, style_name=style.name, pages=pages, price=price, print_cost=style.print_cost,
+        max_photos=style.max_photos, delivery_days_min=style.delivery_days_min, delivery_days_max=style.delivery_days_max, design_percent=pct, design_fee=design, platform_commission=commission)
+
+
 def booking_quote(request, slug):
     """JSON for the live price box on the booking form: the same numbers the booking will be charged."""
     photographer = get_object_or_404(Photographer.objects.select_related("city__state"), slug=slug, status="approved")
@@ -171,17 +193,27 @@ def booking_quote(request, slug):
         package = next((p for p in offered if p.tier == "standard"), offered[0])
     state = State.objects.filter(pk=request.GET["state"]).first() if request.GET.get("state", "").isdigit() else None
     result = travel.summary(photographer, package, days, state, request.GET.get("city", ""))
+    album = None
+    style = AlbumStyle.objects.filter(pk=request.GET["album_style"]).exclude(status__in=["paused", "soon"]).first() \
+        if request.GET.get("album_style", "").isdigit() else None
+    if style and request.GET.get("deliverable") == "album":
+        pages = int(request.GET["album_pages"]) if request.GET.get("album_pages", "").isdigit() else style.pages
+        if pages not in (style.pages, style.pages + 10, style.pages + 20):
+            pages = style.pages
+        album = {"name": style.name, "pages": pages, "price": style.total_for(pages)}
     return JsonResponse({
+        "album": album, "grand": result["total"] + (album["price"] if album else 0),
         "lines": [{"label": label, "amount": amount} for label, amount in result["lines"]],
         "total": result["total"], "allowed": result["allowed"], "reason": result["reason"],
         "has_place": bool(state and request.GET.get("city", "").strip()), "days": days})
 
 
 def cancellation_policy(request):
+    from .gallery import MAX_CHANGE_ROUNDS
     return render(request, "photopholio/policy.html", {
         "rows": policy.rows(), "window": policy.PAYMENT_WINDOW_HOURS,
         "resched_days": policy.RESCHEDULE_MIN_DAYS, "resched_max": policy.MAX_RESCHEDULES,
-        "commission": money.default_percent()})
+        "commission": money.default_percent(), "album_share": money.album_design_percent(), "album_days": 30, "album_rest": 100 - money.album_design_percent(), "album_rounds": MAX_CHANGE_ROUNDS})
 
 
 def register(request):
@@ -350,18 +382,20 @@ def payment(request, pk):
     if request.method == "POST" and form.is_valid():
         # DEMO payment: no card details are collected and no money moves.
         paid = Payment.objects.create(
-            user=request.user, booking=booking, amount=booking.amount,
+            user=request.user, booking=booking, amount=booking.amount,  # photography only: the album is tracked separately
             payment_method=form.cleaned_data["payment_method"], status="completed",
         )
         booking.status = "confirmed"
         booking.save(update_fields=["status"])
+        money.album_on_paid(booking)  # the album (if any) is paid in the same checkout, in its own ledger
         money.on_paid(booking)  # work out the commission and start holding the money
         emails.payment_received(booking, paid)
         messages.success(request, "Payment received. Your booking is confirmed.", extra_tags="money")
         return redirect("my_bookings")
     if request.method == "POST":
         messages.error(request, "Payment failed. Nothing was charged. Please check the details and try again.")
-    return render(request, "photopholio/payment.html", {"booking": booking, "form": form, "policy_rows": policy.rows()})
+    return render(request, "photopholio/payment.html", {"booking": booking, "form": form, "policy_rows": policy.rows(),
+                                                    "album": getattr(booking, "album_order", None)})
 
 
 @login_required
@@ -711,6 +745,8 @@ def pro_delivery(request, pk):
         messages.success(request, "Link saved. The customer has been told their photos are ready.")
     except FlowError as e:
         messages.error(request, str(e))
+    if request.POST.get("next") == "gallery":
+        return redirect("pro_gallery", pk=pk)
     return redirect("pro_dashboard")
 
 
@@ -771,9 +807,10 @@ def pro_earnings(request):
         return redirect("pro_profile")
     rows = list(Booking.objects.filter(photographer=ph).exclude(payout_status="").select_related("user").order_by("-event_date"))
     totals = money.totals(Booking.objects.filter(photographer=ph))
+    albums = list(AlbumOrder.objects.filter(booking__photographer=ph, status="paid").select_related("booking__user").order_by("-paid_at"))
     upcoming = list(Booking.objects.filter(photographer=ph, status__in=["pending", "accepted"]).select_related("user").order_by("event_date"))
     return render(request, "photopholio/pro_earnings.html", {
-        "ph": ph, "rows": rows, "totals": totals, "upcoming": upcoming,
+        "ph": ph, "rows": rows, "totals": totals, "upcoming": upcoming, "albums": albums, "album_fees": money.album_fee_totals(ph),
         "percent": money.percent_for(ph), "missing_payout": not ph.payout_details})
 
 
@@ -911,6 +948,31 @@ def notification_clear_all(request):
 
 @login_required
 @require_POST
+def notification_bulk(request):
+    """Clear (take out of the bell), delete, or mark read, only the notifications the user ticked."""
+    ids = [int(i) for i in request.POST.getlist("ids") if i.isdigit()]
+    action = request.POST.get("action", "")
+    qs = Notification.objects.filter(user=request.user, pk__in=ids)
+    if not ids:
+        if _wants_json(request):
+            return JsonResponse({"ok": False, "error": "Nothing selected."}, status=400)
+        messages.info(request, "Select at least one notification first.")
+        return redirect(_back(request))
+    if action == "delete":
+        qs.delete()
+    elif action == "clear":
+        qs.update(cleared=True, is_read=True)
+    elif action == "read":
+        qs.update(is_read=True)
+    else:
+        return JsonResponse({"ok": False, "error": "Unknown action."}, status=400) if _wants_json(request) else redirect(_back(request))
+    if _wants_json(request):
+        return _bell_state(request.user)
+    return redirect(_back(request))
+
+
+@login_required
+@require_POST
 def notification_restore(request, pk):
     item = get_object_or_404(Notification, pk=pk, user=request.user)
     item.cleared = False
@@ -918,10 +980,26 @@ def notification_restore(request, pk):
     return redirect(_back(request))
 
 
+from .livever import live_version as _live_version
+
+
 @login_required
 def notification_count(request):
-    """Used by the bell to refresh the unread number without reloading the page."""
-    return JsonResponse({"unread": Notification.objects.filter(user=request.user, is_read=False).count()})
+    """Used by the bell. It always returns the unread number and the newest id.
+    With ?after=<id> it also returns what arrived since then, so the page can show a toast and refresh the panel."""
+    mine = Notification.objects.filter(user=request.user)
+    data = {"unread": mine.filter(is_read=False).count(), "max_id": mine.aggregate(m=Max("id"))["m"] or 0,
+            "ver": _live_version(request.user)}
+    after = request.GET.get("after", "")
+    if after.isdigit():
+        fresh = list(mine.filter(id__gt=int(after), is_read=False, cleared=False).order_by("id")[:3])
+        data["latest"] = [{"id": n.pk, "kind": n.kind, "title": n.title, "body": n.body[:140],
+                           "url": reverse("notification_open", args=[n.pk])} for n in fresh]
+        if fresh:
+            data["html"] = render_to_string("photopholio/_bell_menu.html", {
+                "unread_n": data["unread"], "recent_n": list(mine.filter(cleared=False)[:6]),
+                "next_url": request.GET.get("next", "")}, request)
+    return JsonResponse(data)
 
 
 def _back(request):
@@ -929,3 +1007,19 @@ def _back(request):
     if not url_has_allowed_host_and_scheme(target, allowed_hosts={request.get_host()}):
         target = reverse("notification_list")
     return target
+
+
+def albums_list(request):
+    """The PhotoPholio Albums page: every album style that is not paused."""
+    styles = AlbumStyle.objects.exclude(status="paused")
+    return render(request, "photopholio/albums.html", {"styles": styles})
+
+
+def album_detail(request, slug):
+    style = get_object_or_404(AlbumStyle.objects.exclude(status="paused"), slug=slug)
+    others = AlbumStyle.objects.exclude(status="paused").exclude(pk=style.pk)[:3]
+    sizes = [style.pages, style.pages + 10, style.pages + 20]
+    return render(request, "photopholio/album_detail.html", {
+        "style": style, "others": others,
+        "price_rows": [(n, style.total_for(n)) for n in sizes],
+    })

@@ -124,6 +124,9 @@ def mark_paid(booking, reference, now=None):
     booking.payout_reference = reference
     booking.payout_paid_at = now or timezone.now()
     booking.save(update_fields=["payout_status", "payout_reference", "payout_paid_at"])
+    order = getattr(booking, "album_order", None)          # the album design fee goes out in the same transfer, with the same reference
+    if order is not None:
+        album_mark_paid(order, reference)
     emails.payout_sent(booking)
 
 
@@ -142,3 +145,63 @@ def totals(bookings):
     from django.db.models import Count, Sum
     rows = bookings.exclude(payout_status="").values("payout_status").annotate(n=Count("id"), money=Sum("payout_amount"), fee=Sum("platform_fee"))
     return {r["payout_status"]: {"n": r["n"], "money": r["money"] or 0, "fee": r["fee"] or 0} for r in rows}
+
+
+# --- Albums: a separate ledger ------------------------------------------------
+def album_design_percent():
+    """Photographer's share of the album margin (price minus print cost). The rest is PhotoPholio's album commission."""
+    return int(getattr(settings, "ALBUM_DESIGN_SHARE_PERCENT", 60))
+
+
+def album_split(price, print_cost):
+    margin = max(0, price - print_cost)
+    pct = album_design_percent()
+    design = margin * pct // 100
+    return pct, design, margin - design
+
+
+def album_on_paid(booking):
+    """The customer paid for the booking: the album is paid in the same checkout. Held until delivery is confirmed."""
+    order = getattr(booking, "album_order", None)
+    if order is None or order.status != "placed":
+        return
+    order.status, order.paid_at, order.payout_status = "paid", timezone.now(), "held"
+    order.save(update_fields=["status", "paid_at", "payout_status"])
+
+
+def album_on_cancelled(booking):
+    """A booking was cancelled before the album was made: the album is cancelled and refunded in full."""
+    order = getattr(booking, "album_order", None)
+    if order is None or order.status == "cancelled":
+        return
+    was_paid = order.status == "paid"
+    order.status, order.payout_status = "cancelled", "void" if was_paid else ""
+    order.refund_amount = order.price if was_paid else 0
+    order.save(update_fields=["status", "payout_status", "refund_amount"])
+
+
+def album_release_if_due(order):
+    """The photographer's design fee is released once the customer approves the design. held -> ready."""
+    if order.status == "paid" and order.design_status == "approved" and order.payout_status == "held":
+        order.payout_status, order.payout_ready_at = "ready", timezone.now()
+        order.save(update_fields=["payout_status", "payout_ready_at"])
+        return True
+    return False
+
+
+def album_mark_paid(order, reference):
+    """Admin paid the design fee out. Only after it was released, and only once."""
+    if order.payout_status != "ready":
+        return False
+    order.payout_status, order.payout_paid_at, order.payout_reference = "paid", timezone.now(), (reference or "")[:80]
+    order.save(update_fields=["payout_status", "payout_paid_at", "payout_reference"])
+    return True
+
+
+def album_fee_totals(photographer):
+    """Album design fees for a photographer, by stage."""
+    from .models import AlbumOrder
+    out = {"held": 0, "ready": 0, "paid": 0}
+    for o in AlbumOrder.objects.filter(booking__photographer=photographer, status="paid", payout_status__in=list(out)):
+        out[o.payout_status] += o.design_fee
+    return out

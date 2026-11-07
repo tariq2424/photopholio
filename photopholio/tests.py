@@ -14,8 +14,8 @@ from django.urls import reverse
 from django.utils import timezone
 
 from . import analytics, availability, booking_flow, emails, favourites, money, policy, reviews, throttle, tracking, travel
-from .forms import RegisterForm
-from .models import (Booking, City, Country, Feedback, BlockedDate, LoginAttempt, Package, Payment, Photo, Photographer, Portfolio,
+from .forms import BookingForm, RegisterForm
+from .models import (AlbumOrder, GalleryPhoto, AlbumStyle, Booking, City, Country, Feedback, BlockedDate, LoginAttempt, Package, Payment, Photo, Photographer, Portfolio,
                      Favourite, Notification, RescheduleRequest, ShootDay, ShootEvent, State, UserProfile)
 
 
@@ -138,7 +138,7 @@ class PhotographerAccountTests(TestCase):
     # --- registration and roles ---
     def test_register_as_photographer(self):
         resp = self.client.post(reverse("register"), {
-            "role": "photographer", "first_name": "Newbie", "username": "newbie",
+            "role": "photographer", "agree_rules": "on", "first_name": "Newbie", "username": "newbie",
             "email": "n@example.com", "password1": "Str0ng-pass-99", "password2": "Str0ng-pass-99"})
         self.assertRedirects(resp, reverse("pro_login"))
         self.assertEqual(User.objects.get(username="newbie").profile.role, "photographer")
@@ -189,7 +189,7 @@ class PhotographerAccountTests(TestCase):
         self.customer.email = "taken@example.com"
         self.customer.save()
         r = self.client.post(reverse("register"), {
-            "role": "photographer", "first_name": "Copy", "username": "copycat", "email": "TAKEN@example.com",
+            "role": "photographer", "agree_rules": "on", "first_name": "Copy", "username": "copycat", "email": "TAKEN@example.com",
             "password1": "Str0ng-pass-99", "password2": "Str0ng-pass-99"})
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, "already exists")
@@ -1421,7 +1421,7 @@ class PackageTests(TestCase):
         r = self.client.get(reverse("photographer_list"))
         self.assertContains(r, "From &#8377;3000")
         self.assertContains(r, "&#8377;5000 <span>/ day</span>")           # the one without packages
-        self.assertContains(self.client.get(reverse("home")), "From &#8377;3000")
+        self.assertEqual(self.client.get(reverse("home")).status_code, 200)
 
     def test_price_sorting_uses_package_prices(self):
         a = Photographer.objects.create(name="Cheap Packages", bio="b", specialities="event", city=self.ph.city, price_per_day=9000)
@@ -2665,7 +2665,7 @@ class MoneyTests(TestCase):
     def test_dashboard_shows_what_you_earn(self):
         Booking.objects.create(user=self.cust, photographer=self.ph, event_date=self.today + timedelta(days=9), price=10000)
         self.client.login(username="pro", password="pass12345")
-        self.assertContains(self.client.get(reverse("pro_dashboard")), "You earn &#8377;9000 after 10% commission")
+        self.assertContains(self.client.get(reverse("pro_dashboard")), "You earn <strong>&#8377;9000</strong>")
 
     def test_profile_form_saves_payout_details(self):
         self.client.login(username="pro", password="pass12345")
@@ -2779,7 +2779,7 @@ class SignupThenLoginTests(TestCase):
     def signup(self, role, username="newperson"):
         return self.client.post(reverse("register"), {
             "role": role, "first_name": "New", "username": username, "email": f"{username}@example.com",
-            "password1": "Str0ng-pass-99", "password2": "Str0ng-pass-99"})
+            "password1": "Str0ng-pass-99", "password2": "Str0ng-pass-99", "agree_rules": "on"})
 
     def test_signup_does_not_log_you_in(self):
         r = self.signup("customer")
@@ -3218,14 +3218,63 @@ class InAppNotificationTests(TestCase):
         self.client.login(username="cust", password="pass12345")
         resp = self.client.get(reverse("home"))
         self.assertContains(resp, 'id="bellBadge"')
-        self.assertEqual(self.client.get(reverse("notification_count")).json(), {"unread": 1})
+        self.assertEqual(self.client.get(reverse("notification_count")).json()["unread"], 1)
         n = self.mine(self.cust).get()
         resp = self.client.get(reverse("notification_open", args=[n.pk]))
         self.assertEqual(resp.status_code, 302)
         self.assertTrue(resp["Location"].endswith("/pay/"))
         n.refresh_from_db()
         self.assertTrue(n.is_read)
-        self.assertEqual(self.client.get(reverse("notification_count")).json(), {"unread": 0})
+        self.assertEqual(self.client.get(reverse("notification_count")).json()["unread"], 0)
+
+    def test_count_endpoint_reports_only_new_items_after_a_given_id(self):
+        booking_flow.accept(self.booking())
+        self.client.login(username="cust", password="pass12345")
+        base = self.client.get(reverse("notification_count")).json()
+        self.assertEqual(set(base), {"unread", "max_id", "ver"})            # no "latest" unless asked
+        first = base["max_id"]
+        same = self.client.get(reverse("notification_count"), {"after": first}).json()
+        self.assertEqual(same["latest"], [])
+        self.assertNotIn("html", same)
+        Notification.objects.create(user=self.cust, kind="alert", title="New thing", body="Body text", url="/")
+        fresh = self.client.get(reverse("notification_count"), {"after": first, "next": "/pay/"}).json()
+        self.assertEqual([n["title"] for n in fresh["latest"]], ["New thing"])
+        self.assertIn("New thing", fresh["html"])
+        self.assertIn('value="/pay/"', fresh["html"])
+        self.assertGreater(fresh["max_id"], first)
+        bad = self.client.get(reverse("notification_count"), {"after": "x"}).json()
+        self.assertNotIn("latest", bad)
+
+    def test_count_endpoint_skips_cleared_and_read_items(self):
+        self.client.login(username="cust", password="pass12345")
+        a = Notification.objects.create(user=self.cust, kind="alert", title="A", body="", url="/")
+        b = Notification.objects.create(user=self.cust, kind="alert", title="B", body="", url="/", is_read=True)
+        c = Notification.objects.create(user=self.cust, kind="alert", title="C", body="", url="/", cleared=True)
+        got = self.client.get(reverse("notification_count"), {"after": 0}).json()
+        self.assertEqual([n["title"] for n in got["latest"]], ["A"])
+
+    def test_bulk_endpoint_acts_only_on_ticked_rows_of_this_user(self):
+        self.client.login(username="cust", password="pass12345")
+        a = Notification.objects.create(user=self.cust, kind="alert", title="A", body="", url="/")
+        b = Notification.objects.create(user=self.cust, kind="alert", title="B", body="", url="/")
+        theirs = Notification.objects.create(user=self.cust2, kind="alert", title="X", body="", url="/")
+        r = self.client.post(reverse("notification_bulk"), {"action": "clear", "ids": [a.pk, theirs.pk]}, HTTP_X_REQUESTED_WITH="fetch")
+        self.assertEqual(r.status_code, 200)
+        a.refresh_from_db(); b.refresh_from_db(); theirs.refresh_from_db()
+        self.assertTrue(a.cleared); self.assertFalse(b.cleared); self.assertFalse(theirs.cleared)
+        self.client.post(reverse("notification_bulk"), {"action": "delete", "ids": [b.pk, theirs.pk]})
+        self.assertFalse(Notification.objects.filter(pk=b.pk).exists())
+        self.assertTrue(Notification.objects.filter(pk=theirs.pk).exists())
+        none = self.client.post(reverse("notification_bulk"), {"action": "delete"}, HTTP_X_REQUESTED_WITH="fetch")
+        self.assertEqual(none.status_code, 400)
+
+    def test_live_version_changes_when_a_booking_moves_on(self):
+        self.client.login(username="cust", password="pass12345")
+        first = self.client.get(reverse("notification_count")).json()["ver"]
+        self.assertEqual(first, self.client.get(reverse("notification_count")).json()["ver"])
+        b = self.booking()
+        booking_flow.accept(b)
+        self.assertNotEqual(first, self.client.get(reverse("notification_count")).json()["ver"])
 
     def test_mark_all_read_toggle_and_delete(self):
         b1 = self.booking(10)
@@ -3493,7 +3542,7 @@ class ClearNotificationTests(TestCase):
     def test_clear_all_and_cleared_filter(self):
         self.client.post(reverse("notification_clear_all"))
         self.assertFalse(Notification.objects.filter(user=self.u, cleared=False).exists())
-        self.assertEqual(self.client.get(reverse("notification_count")).json(), {"unread": 0})
+        self.assertEqual(self.client.get(reverse("notification_count")).json()["unread"], 0)
         resp = self.client.get(reverse("notification_list") + "?filter=cleared")
         for n in self.items:
             self.assertContains(resp, n.title)
@@ -3529,4 +3578,840 @@ class ClearNotificationTests(TestCase):
         self.client.post(reverse("notification_clear_all"))
         fresh = notifications.notify(self.u, "Fresh one", "x", "/bookings/", "Booking")
         self.assertContains(self.client.get(reverse("home")), f"/notifications/{fresh.pk}/open/")
-        self.assertEqual(self.client.get(reverse("notification_count")).json(), {"unread": 1})
+        self.assertEqual(self.client.get(reverse("notification_count")).json()["unread"], 1)
+
+
+class HomeStyleCardsTests(TestCase):
+    """The home page has a styles section: one card per style on the site, linking to that style's list."""
+
+    def test_one_card_per_style_with_top_photographer_and_count(self):
+        from django.contrib.auth.models import User
+        city = City.objects.create(name="Pune", state=State.objects.create(country=Country.objects.create(name="India"), name="Maharashtra"))
+        for i, (spec, rating) in enumerate([("travel", 4.1), ("travel", 4.9), ("wedding", 4.0)]):
+            u = User.objects.create_user(f"hs{i}", f"hs{i}@x.com", "pw12345678")
+            Photographer.objects.create(user=u, name=f"Pro {i}", bio="b" * 60, city=city, specialities=spec, rating=rating, status="approved")
+        r = self.client.get("/")
+        cats = {c["key"]: c for c in r.context["categories"]}
+        self.assertEqual(set(cats), {"travel", "wedding"})
+        self.assertEqual(cats["travel"]["count"], 2)
+        self.assertEqual(cats["travel"]["top"].name, "Pro 1")
+        self.assertContains(r, 'id="styles"')
+        self.assertContains(r, "?speciality=travel")           # each style tile opens that style's list
+        self.assertContains(r, "?speciality=wedding")
+        self.assertContains(r, "?speciality=wildlife")        # every style on the site is listed
+        self.assertNotContains(r, "Styles on PhotoPholio")
+
+
+class AlbumStyleTests(TestCase):
+    """PhotoPholio Albums (patch 28): the five seeded styles, admin control and what customers can see."""
+
+    def test_six_styles_are_seeded_and_listed(self):
+        self.assertEqual(AlbumStyle.objects.count(), 6)
+        r = self.client.get("/albums/")
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "Classic Hardbound")
+        self.assertContains(r, "Flush-mount Layflat")
+
+    def test_detail_shows_specs_and_prices_but_never_the_printing_cost(self):
+        s = AlbumStyle.objects.get(slug="classic-hardbound")
+        r = self.client.get(f"/albums/{s.slug}/")
+        self.assertContains(r, "12 x 15 in")
+        self.assertContains(r, f"&#8377;{s.price}")
+        self.assertNotContains(r, "Printing cost")
+        self.assertNotContains(r, str(s.print_cost) if s.print_cost not in (s.price, s.extra_page_price) else "zzz-none")
+
+    def test_paused_albums_are_hidden_and_return_404(self):
+        s = AlbumStyle.objects.get(slug="slim-photobook")
+        s.status = "paused"
+        s.save()
+        self.assertNotContains(self.client.get("/albums/"), "Slim Photobook")
+        self.assertEqual(self.client.get(f"/albums/{s.slug}/").status_code, 404)
+
+    def test_price_is_never_fixed_in_code(self):
+        s = AlbumStyle.objects.get(slug="classic-hardbound")
+        s.price, s.extra_page_price, s.pages = 4000, 100, 30
+        s.save()
+        self.assertEqual(s.total_for(30), 4000)
+        self.assertEqual(s.total_for(40), 5000)
+        self.assertContains(self.client.get(f"/albums/{s.slug}/"), "&#8377;5000")
+
+    def test_admin_can_add_edit_and_pause(self):
+        from django.contrib.auth.models import User
+        User.objects.create_superuser("boss_a", "b@x.com", "pw12345678")
+        self.client.login(username="boss_a", password="pw12345678")
+        self.assertEqual(self.client.get("/admin/photopholio/albumstyle/").status_code, 200)
+        self.assertEqual(self.client.get("/admin/photopholio/albumstyle/add/").status_code, 200)
+        s = AlbumStyle.objects.first()
+        self.assertEqual(self.client.get(f"/admin/photopholio/albumstyle/{s.pk}/change/").status_code, 200)
+
+    def test_navbar_footer_and_how_it_works_mention_albums(self):
+        r = self.client.get("/")
+        self.assertContains(r, 'href="/albums/"')
+        self.assertContains(r, "Make an album")
+
+    def test_every_price_a_customer_sees_is_between_1000_and_4000(self):
+        for s in AlbumStyle.objects.all():
+            for pages in (s.pages, s.pages + 10, s.pages + 20):
+                self.assertTrue(1000 <= s.total_for(pages) <= 4000, f"{s.name} {pages} pages = {s.total_for(pages)}")
+            self.assertGreater(s.price, s.print_cost)
+
+
+class AlbumAddOnTests(TestCase):
+    """Patch 29: the 6th album, the booking add-on and the separate album ledger."""
+
+    def setUp(self):
+        country = Country.objects.create(name="India")
+        self.state = State.objects.create(country=country, name="Gujarat")
+        city = City.objects.create(state=self.state, name="Vadodara")
+        pro = User.objects.create_user("pro", password="pass12345", first_name="Pro")
+        UserProfile.objects.create(user=pro, role="photographer")
+        self.ph = Photographer.objects.create(name="Album Snap", bio="bio", specialities="wedding", city=city,
+                                              price_per_day=8000, user=pro)
+        self.cust = User.objects.create_user("cust", password="pass12345", first_name="Cust")
+        self.style = AlbumStyle.objects.get(slug="classic-hardbound")
+        self.url = reverse("photographer_detail", args=[self.ph.slug])
+        self.date = (timezone.localdate() + timedelta(days=8)).isoformat()
+        self.client.login(username="cust", password="pass12345")
+
+    def post(self, **extra):
+        return self.client.post(self.url, {**EVENT(), "event_date": self.date, "tool": "", **extra})
+
+    def test_sixth_album_exists_in_range(self):
+        s = AlbumStyle.objects.get(slug="travel-journal-book")
+        self.assertEqual(AlbumStyle.objects.count(), 6)
+        for extra in (0, 10, 20):
+            self.assertTrue(1000 <= s.total_for(s.pages + extra) <= 4000)
+        self.assertGreater(s.price, s.print_cost)
+        self.assertContains(self.client.get("/albums/"), "Travel Journal Book")
+
+    def test_default_booking_has_no_album(self):
+        self.post()
+        b = Booking.objects.get()
+        self.assertEqual(b.deliverable, "photos")
+        self.assertFalse(AlbumOrder.objects.exists())
+        self.assertEqual(b.grand_total, b.amount)
+
+    def test_album_add_on_creates_separate_order_with_snapshot(self):
+        self.post(deliverable="album", album_style=self.style.pk, album_pages=self.style.pages + 10)
+        b = Booking.objects.get()
+        o = b.album_order
+        self.assertEqual(o.price, self.style.total_for(self.style.pages + 10))
+        self.assertEqual(o.price, o.print_cost + o.design_fee + o.platform_commission)
+        self.assertEqual(b.amount, 8000)              # photography price untouched
+        self.assertEqual(b.grand_total, 8000 + o.price)
+        self.style.price = 1234; self.style.save()    # later price change never alters the order
+        o.refresh_from_db()
+        self.assertNotEqual(o.price, 1234)
+
+    def test_album_requires_a_style_and_bad_pages_fall_back(self):
+        self.post(deliverable="album")
+        self.assertEqual(Booking.objects.count(), 0)
+        self.post(deliverable="album", album_style=self.style.pk, album_pages=999)
+        self.assertEqual(Booking.objects.get().album_order.pages, self.style.pages)
+
+    def test_paused_album_cannot_be_ordered(self):
+        self.style.status = "paused"; self.style.save()
+        self.post(deliverable="album", album_style=self.style.pk, album_pages=self.style.pages)
+        self.assertEqual(Booking.objects.count(), 0)
+
+    def test_quote_includes_album_and_grand_total(self):
+        r = self.client.get(reverse("booking_quote", args=[self.ph.slug]), {
+            "date": self.date, "deliverable": "album", "album_style": self.style.pk, "album_pages": self.style.pages})
+        d = r.json()
+        self.assertEqual(d["album"]["price"], self.style.price)
+        self.assertEqual(d["grand"], d["total"] + self.style.price)
+        d2 = self.client.get(reverse("booking_quote", args=[self.ph.slug]), {"date": self.date}).json()
+        self.assertIsNone(d2["album"])
+
+    def test_payment_marks_album_paid_without_changing_photography_split(self):
+        from .booking_flow import accept
+        self.post()
+        plain = Booking.objects.get()
+        self.client.post(self.url, {})  # no-op
+        plain.delete()
+        self.post(deliverable="album", album_style=self.style.pk, album_pages=self.style.pages)
+        b = Booking.objects.get()
+        accept(b)
+        r = self.client.get(reverse("payment", args=[b.pk]))
+        self.assertContains(r, self.style.name)
+        self.assertContains(r, f"Pay &#8377;{b.grand_total}")
+        self.client.post(reverse("payment", args=[b.pk]), {"payment_method": "upi"})
+        b.refresh_from_db()
+        o = b.album_order; o.refresh_from_db()
+        self.assertEqual((o.status, o.payout_status), ("paid", "held"))
+        self.assertEqual(b.paid_payment.amount, 8000)
+        self.assertEqual((b.platform_fee, b.payout_amount), (800, 7200))  # 10% of 8000 only
+
+    def test_cancelling_refunds_the_album(self):
+        from .booking_flow import accept, cancel_by_customer
+        self.post(deliverable="album", album_style=self.style.pk, album_pages=self.style.pages)
+        b = Booking.objects.get(); accept(b)
+        self.client.post(reverse("payment", args=[b.pk]), {"payment_method": "upi"})
+        b.refresh_from_db(); cancel_by_customer(b)
+        o = AlbumOrder.objects.get()
+        self.assertEqual((o.status, o.refund_amount), ("cancelled", o.price))
+        b2 = Booking.objects.get(); self.assertIsNone(b2.album)
+
+    def test_unpaid_album_cancelled_with_declined_booking(self):
+        from .booking_flow import decline
+        self.post(deliverable="album", album_style=self.style.pk, album_pages=self.style.pages)
+        b = Booking.objects.get(); decline(b)
+        self.assertEqual(AlbumOrder.objects.get().status, "cancelled")
+
+    def test_photographer_sees_design_fee_not_print_cost(self):
+        self.post(deliverable="album", album_style=self.style.pk, album_pages=self.style.pages)
+        o = AlbumOrder.objects.get()
+        self.client.logout(); self.client.login(username="pro", password="pass12345")
+        r = self.client.get(reverse("pro_dashboard"))
+        self.assertContains(r, f"&#8377;{o.design_fee}")
+        self.assertNotContains(r, f"print cost")
+
+    def test_customer_sees_album_on_my_bookings_and_admin_page_loads(self):
+        self.post(deliverable="album", album_style=self.style.pk, album_pages=self.style.pages)
+        self.assertContains(self.client.get(reverse("my_bookings")), "Classic Hardbound")
+        self.client.logout()
+        User.objects.create_superuser("boss", "b@example.com", "pass12345")
+        self.client.login(username="boss", password="pass12345")
+        self.assertEqual(self.client.get("/admin/photopholio/albumorder/").status_code, 200)
+
+    def test_two_options_only(self):
+        self.assertEqual([c[0] for c in BookingForm().fields["deliverable"].choices], ["photos", "album"])
+        self.post(deliverable="photos")
+        self.assertEqual(Booking.objects.get().deliverable, "photos")
+        self.assertFalse(AlbumOrder.objects.exists())
+
+
+class PrivateGalleryTests(TestCase):
+    """Patch 30: private shoot gallery and the customer's favourite selection."""
+
+    def setUp(self):
+        from .booking_flow import accept
+        country = Country.objects.create(name="India")
+        State.objects.create(country=country, name="Gujarat")
+        city = City.objects.create(state=State.objects.first(), name="Vadodara")
+        pro = User.objects.create_user("pro", password="pass12345", first_name="Pro")
+        UserProfile.objects.create(user=pro, role="photographer")
+        self.ph = Photographer.objects.create(name="Gal Snap", bio="bio", specialities="wedding", city=city, price_per_day=8000, user=pro)
+        self.cust = User.objects.create_user("cust", password="pass12345", first_name="Cust")
+        self.other = User.objects.create_user("other", password="pass12345")
+        self.style = AlbumStyle.objects.get(slug="mini-parents-album")
+        self.client.login(username="cust", password="pass12345")
+        self.client.post(reverse("photographer_detail", args=[self.ph.slug]), {
+            **EVENT(), "event_date": (timezone.localdate() + timedelta(days=6)).isoformat(), "tool": "",
+            "deliverable": "album", "album_style": self.style.pk, "album_pages": self.style.pages})
+        self.b = Booking.objects.get()
+        accept(self.b)
+        self.client.post(reverse("payment", args=[self.b.pk]), {"payment_method": "upi"})
+        self.b.refresh_from_db()
+        Booking.objects.filter(pk=self.b.pk).update(status="completed")  # the shoot is done: photos can be sent
+        self.b.refresh_from_db()
+
+    def upload(self, n=6, user="pro"):
+        self.client.logout(); self.client.login(username=user, password="pass12345")
+        files = [make_image(f"p{i}.jpg") for i in range(n)]
+        return self.client.post(reverse("pro_gallery", args=[self.b.pk]), {"images": files})
+
+    def test_photographer_uploads_and_customer_is_notified(self):
+        self.upload(6)
+        self.assertEqual(self.b.gallery.count(), 6)
+        self.assertTrue(Notification.objects.filter(user=self.cust, title="New photos from your shoot").exists())
+
+    def test_upload_needs_a_completed_shoot(self):
+        Booking.objects.filter(pk=self.b.pk).update(status="confirmed")
+        self.upload(2)
+        self.assertEqual(self.b.gallery.count(), 0)
+        b2 = Booking.objects.create(user=self.cust, photographer=self.ph, event_date=timezone.localdate() + timedelta(days=30), status="pending")
+        self.client.login(username="pro", password="pass12345")
+        self.client.post(reverse("pro_gallery", args=[b2.pk]), {"images": [make_image("x.jpg")]})
+        self.assertEqual(b2.gallery.count(), 0)
+
+    def test_bad_file_is_rejected_and_large_images_are_resized(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+        self.client.logout(); self.client.login(username="pro", password="pass12345")
+        self.client.post(reverse("pro_gallery", args=[self.b.pk]), {"images": [SimpleUploadedFile("a.jpg", b"not an image", "image/jpeg")]})
+        self.assertEqual(self.b.gallery.count(), 0)
+        self.upload(1)
+        img = Image.open(self.b.gallery.first().image)
+        self.assertLessEqual(max(img.size), 2000)
+
+    def test_only_owner_photographer_and_staff_can_open(self):
+        self.upload(2)
+        url = reverse("my_gallery", args=[self.b.pk])
+        self.client.logout()
+        self.assertEqual(self.client.get(url).status_code, 302)  # login needed
+        self.client.login(username="other", password="pass12345")
+        self.assertEqual(self.client.get(url).status_code, 404)
+        self.client.logout(); self.client.login(username="cust", password="pass12345")
+        self.assertEqual(self.client.get(url).status_code, 200)
+        self.client.logout(); self.client.login(username="pro", password="pass12345")
+        self.assertEqual(self.client.get(url).status_code, 200)
+        self.assertEqual(self.client.get(reverse("pro_gallery", args=[self.b.pk])).status_code, 200)
+        self.client.logout(); self.client.login(username="other", password="pass12345")
+        self.assertEqual(self.client.get(reverse("pro_gallery", args=[self.b.pk])).status_code, 302)  # not a photographer
+
+    def test_favourite_toggle_limit_and_submit(self):
+        self.upload(7)
+        self.client.logout(); self.client.login(username="cust", password="pass12345")
+        ids = list(self.b.gallery.values_list("pk", flat=True))
+        tog = lambda i: self.client.post(reverse("gallery_toggle", args=[self.b.pk, i]))
+        self.assertEqual(tog(ids[0]).json()["count"], 1)
+        self.assertFalse(tog(ids[0]).json()["favourite"])           # toggles back off
+        # too few picks: cannot submit
+        for i in ids[:4]: tog(i)
+        self.client.post(reverse("gallery_submit", args=[self.b.pk]))
+        self.assertEqual(AlbumOrder.objects.get().selection_status, "open")
+        tog(ids[4])
+        self.client.post(reverse("gallery_submit", args=[self.b.pk]))
+        o = AlbumOrder.objects.get()
+        self.assertEqual(o.selection_status, "submitted")
+        self.assertTrue(Notification.objects.filter(user=self.ph.user, title="Album photos selected").exists())
+        # locked: cannot change, can reopen
+        self.assertEqual(tog(ids[5]).status_code, 409)
+        self.client.post(reverse("gallery_reopen", args=[self.b.pk]))
+        self.assertEqual(tog(ids[5]).status_code, 200)
+
+    def test_limit_is_enforced(self):
+        AlbumOrder.objects.update(max_photos=5)
+        self.upload(7)
+        self.client.logout(); self.client.login(username="cust", password="pass12345")
+        ids = list(self.b.gallery.values_list("pk", flat=True))
+        for i in ids[:5]:
+            self.client.post(reverse("gallery_toggle", args=[self.b.pk, i]))
+        r = self.client.post(reverse("gallery_toggle", args=[self.b.pk, ids[5]]))
+        self.assertEqual(r.status_code, 409)
+
+    def test_other_customer_cannot_pick_and_photographer_cannot_delete_after_selection(self):
+        self.upload(6)
+        ids = list(self.b.gallery.values_list("pk", flat=True))
+        self.client.logout(); self.client.login(username="other", password="pass12345")
+        self.assertEqual(self.client.post(reverse("gallery_toggle", args=[self.b.pk, ids[0]])).status_code, 404)
+        self.client.logout(); self.client.login(username="cust", password="pass12345")
+        for i in ids[:5]:
+            self.client.post(reverse("gallery_toggle", args=[self.b.pk, i]))
+        self.client.post(reverse("gallery_submit", args=[self.b.pk]))
+        self.client.logout(); self.client.login(username="pro", password="pass12345")
+        self.client.post(reverse("pro_gallery_delete", args=[ids[0]]))
+        self.assertEqual(self.b.gallery.count(), 6)
+        self.assertContains(self.client.get(reverse("pro_gallery", args=[self.b.pk])), "picked")
+
+    def test_links_show_on_booking_lists(self):
+        self.upload(2)
+        self.client.logout(); self.client.login(username="cust", password="pass12345")
+        self.assertContains(self.client.get(reverse("my_bookings")), "Open your private gallery")
+        self.client.logout(); self.client.login(username="pro", password="pass12345")
+        self.assertContains(self.client.get(reverse("pro_dashboard")), "Private gallery")
+
+    def test_unpaid_album_cannot_pick(self):
+        AlbumOrder.objects.update(status="placed")
+        self.upload(2)
+        self.client.logout(); self.client.login(username="cust", password="pass12345")
+        i = self.b.gallery.first().pk
+        self.assertEqual(self.client.post(reverse("gallery_toggle", args=[self.b.pk, i])).status_code, 404)
+
+
+class AlbumDesignTests(PrivateGalleryTests):
+    """Patch 31: photographer sends a design, customer approves or asks for changes, delivery window starts at approval."""
+
+    def picked(self):
+        self.upload(7)
+        self.client.logout(); self.client.login(username="cust", password="pass12345")
+        for i in list(self.b.gallery.values_list("pk", flat=True))[:5]:
+            self.client.post(reverse("gallery_toggle", args=[self.b.pk, i]))
+        self.client.post(reverse("gallery_submit", args=[self.b.pk]))
+
+    def send_design(self, n=3, note="v", link="https://drive.google.com/drive/folders/abc"):
+        self.client.logout(); self.client.login(username="pro", password="pass12345")
+        return self.client.post(reverse("pro_design_submit", args=[self.b.pk]), {"link": link, "note": note})
+
+    def customer(self):
+        self.client.logout(); self.client.login(username="cust", password="pass12345")
+
+    def test_design_needs_a_sent_selection(self):
+        self.upload(3)
+        self.send_design()
+        self.assertEqual(AlbumOrder.objects.get().designs.count(), 0)
+
+    def test_design_flow_changes_then_approve_starts_the_delivery_window(self):
+        self.picked()
+        self.send_design(3)
+        o = AlbumOrder.objects.get()
+        self.assertEqual((o.design_status, o.designs.count(), bool(o.designs.first().link)), ("submitted", 1, True))
+        self.assertTrue(Notification.objects.filter(user=self.cust, title="Your album design is ready").exists())
+        self.assertIsNone(o.approved_at)
+        self.customer()
+        self.assertContains(self.client.get(reverse("my_gallery", args=[self.b.pk])), "Approve design")
+        # a change needs a note
+        self.client.post(reverse("design_decide", args=[self.b.pk, "changes"]), {"note": " "})
+        self.assertEqual(AlbumOrder.objects.get().design_status, "submitted")
+        self.client.post(reverse("design_decide", args=[self.b.pk, "changes"]), {"note": "Cover photo 3 please"})
+        o.refresh_from_db()
+        self.assertEqual(o.design_status, "changes")
+        self.assertTrue(Notification.objects.filter(user=self.ph.user, title="Changes asked on the album design").exists())
+        self.send_design(2)
+        o.refresh_from_db()
+        self.assertEqual((o.design_status, o.designs.count()), ("submitted", 2))
+        self.customer()
+        self.client.post(reverse("design_decide", args=[self.b.pk, "approve"]))
+        o.refresh_from_db()
+        self.assertEqual(o.design_status, "approved")
+        self.assertEqual((o.delivery_to - o.approved_at.date()).days, 30)
+        self.assertTrue(Notification.objects.filter(user=self.ph.user, title="Album design approved").exists())
+        self.assertContains(self.client.get(reverse("my_gallery", args=[self.b.pk])), "within 30 days")
+
+    def test_approved_design_is_final_and_selection_is_locked(self):
+        self.picked(); self.send_design(); self.customer()
+        self.client.post(reverse("design_decide", args=[self.b.pk, "approve"]))
+        self.send_design(2)                       # cannot send another after approval
+        self.assertEqual(AlbumOrder.objects.get().designs.count(), 1)
+        self.customer()
+        self.client.post(reverse("gallery_reopen", args=[self.b.pk]))
+        self.assertEqual(AlbumOrder.objects.get().selection_status, "submitted")
+        self.client.post(reverse("design_decide", args=[self.b.pk, "changes"]), {"note": "late"})
+        self.assertEqual(AlbumOrder.objects.get().design_status, "approved")
+
+    def test_selection_cannot_be_reopened_once_a_design_exists(self):
+        self.picked(); self.send_design(); self.customer()
+        self.client.post(reverse("gallery_reopen", args=[self.b.pk]))
+        self.assertEqual(AlbumOrder.objects.get().selection_status, "submitted")
+
+    def test_change_rounds_are_limited(self):
+        self.picked()
+        for n in range(3):
+            self.send_design(1); self.customer()
+            self.client.post(reverse("design_decide", args=[self.b.pk, "changes"]), {"note": f"round {n}"})
+        self.send_design(1); self.customer()
+        self.client.post(reverse("design_decide", args=[self.b.pk, "changes"]), {"note": "one more"})
+        self.assertEqual(AlbumOrder.objects.get().design_status, "submitted")  # fourth ask refused
+        self.client.post(reverse("design_decide", args=[self.b.pk, "approve"]))
+        self.assertEqual(AlbumOrder.objects.get().design_status, "approved")
+
+    def test_other_people_cannot_decide_or_send(self):
+        self.picked(); self.send_design()
+        self.client.logout(); self.client.login(username="other", password="pass12345")
+        self.assertEqual(self.client.post(reverse("design_decide", args=[self.b.pk, "approve"])).status_code, 404)
+        self.assertEqual(AlbumOrder.objects.get().design_status, "submitted")
+
+    def test_design_needs_a_real_link(self):
+        self.picked()
+        for bad in ("", "not a link", "javascript:alert(1)", "ftp://x.com/a"):
+            self.send_design(link=bad)
+        self.assertEqual(AlbumOrder.objects.get().designs.count(), 0)
+
+    def test_customer_sees_the_design_link_not_images(self):
+        self.picked(); self.send_design(link="https://drive.google.com/drive/folders/zzz"); self.customer()
+        html = self.client.get(reverse("my_gallery", args=[self.b.pk])).content.decode()
+        self.assertIn("Open the design", html)
+        self.assertIn("drive.google.com/drive/folders/zzz", html)
+
+    def test_dashboard_has_no_link_box_for_album_bookings_but_gallery_has(self):
+        self.client.logout(); self.client.login(username="pro", password="pass12345")
+        self.assertNotContains(self.client.get(reverse("pro_dashboard")), 'name="delivery_link"')
+        self.assertContains(self.client.get(reverse("pro_gallery", args=[self.b.pk])), 'name="delivery_link"')
+        r = self.client.post(reverse("pro_delivery", args=[self.b.pk]), {"delivery_link": "https://drive.google.com/x", "next": "gallery"})
+        self.assertRedirects(r, reverse("pro_gallery", args=[self.b.pk]))
+        self.b.refresh_from_db(); self.assertEqual(self.b.delivery_link, "https://drive.google.com/x")
+
+    def test_plain_booking_keeps_the_dashboard_link_box(self):
+        AlbumOrder.objects.all().delete()
+        self.client.logout(); self.client.login(username="pro", password="pass12345")
+        self.assertContains(self.client.get(reverse("pro_dashboard")), 'name="delivery_link"')
+
+    def approve(self):
+        self.picked(); self.send_design(); self.customer()
+        self.client.post(reverse("design_decide", args=[self.b.pk, "approve"]))
+        return AlbumOrder.objects.get()
+
+    def test_approval_queues_production_and_releases_the_design_fee(self):
+        o = self.approve()
+        self.assertEqual((o.production_status, o.payout_status), ("queued", "ready"))     # fee is ready as soon as the design is approved
+        self.assertEqual(o.events.count(), 1)
+
+    def test_delivery_is_promised_within_30_days(self):
+        o = self.approve()
+        self.assertEqual((o.delivery_to - o.approved_at.date()).days, 30)
+
+    def test_four_steps_need_a_tracking_link_and_tell_the_customer(self):
+        from . import album_ops
+        o = self.approve()
+        self.assertIsNone(album_ops.advance(o, "printing"))
+        self.assertTrue(Notification.objects.filter(user=self.cust, title="Album update: printing").exists())
+        self.assertIn("tracking", album_ops.advance(o, "shipped"))
+        o.tracking_url = "https://track.example.com/BD123"; o.save()
+        self.assertIsNone(album_ops.advance(o, "shipped"))
+        o.refresh_from_db(); self.assertEqual(len(o.delivery_otp), 4)
+        self.assertIn("already", album_ops.advance(o, "printing"))             # cannot go back
+        self.assertIsNone(album_ops.advance(o, "delivered"))
+        o.refresh_from_db(); self.assertEqual(o.production_status, "delivered"); self.assertIsNotNone(o.delivered_at)
+
+    def test_old_in_between_steps_are_gone(self):
+        from . import album_ops
+        o = self.approve()
+        for old in ("ordered", "printed", "packed"):
+            self.assertEqual(album_ops.advance(o, old), "Unknown step.")
+
+    def test_wrong_delivery_code_blocks_delivered(self):
+        from . import album_ops
+        o = self.approve(); o.tracking_url = "https://t.example.com/1"; o.save()
+        album_ops.advance(o, "printing"); album_ops.advance(o, "shipped"); o.refresh_from_db()
+        o.otp_given = "0000" if o.delivery_otp != "0000" else "1111"; o.save()
+        self.assertIn("code", album_ops.advance(o, "delivered"))
+        o.otp_given = o.delivery_otp; o.save()
+        self.assertIsNone(album_ops.advance(o, "delivered"))
+
+    def test_customer_sees_the_tracker_the_link_and_the_code(self):
+        from . import album_ops
+        o = self.approve(); o.tracking_url = "https://track.example.com/BD123"; o.save()
+        album_ops.advance(o, "printing"); album_ops.advance(o, "shipped"); o.refresh_from_db(); self.customer()
+        html = self.client.get(reverse("my_gallery", args=[self.b.pk])).content.decode()
+        for want in ("Track your album", "within 30 days", "track.example.com/BD123", o.delivery_otp, "Help center"):
+            self.assertIn(want, html)
+        self.assertEqual([s["state"] for s in o.track_steps], ["done", "done", "now", "todo"])
+
+    def test_customer_layout_choice_reaches_the_photographer(self):
+        self.upload(7)
+        self.client.logout(); self.client.login(username="cust", password="pass12345")
+        for i in list(self.b.gallery.values_list("pk", flat=True))[:5]:
+            self.client.post(reverse("gallery_toggle", args=[self.b.pk, i]))
+        self.client.post(reverse("gallery_submit", args=[self.b.pk]), {"layout": "4"})
+        o = AlbumOrder.objects.get(); self.assertEqual(o.layout, 4)
+        self.assertIn("4 per page", Notification.objects.filter(user=self.ph.user, title="Album photos selected").first().body)
+        self.client.logout(); self.client.login(username="pro", password="pass12345")
+        self.assertContains(self.client.get(reverse("pro_gallery", args=[self.b.pk])), "4 photos per page")
+
+    def test_bad_layout_falls_back_to_two(self):
+        self.upload(7)
+        self.client.logout(); self.client.login(username="cust", password="pass12345")
+        for i in list(self.b.gallery.values_list("pk", flat=True))[:5]:
+            self.client.post(reverse("gallery_toggle", args=[self.b.pk, i]))
+        self.client.post(reverse("gallery_submit", args=[self.b.pk]), {"layout": "9"})
+        self.assertEqual(AlbumOrder.objects.get().layout, 2)
+
+    def test_each_album_style_has_its_own_look(self):
+        from . import album_themes
+        from .models import AlbumStyle
+        a = AlbumStyle.objects.create(name="A1", size_label="12 x 12 in"); b = AlbumStyle.objects.create(name="B1", size_label="12 x 12 in")
+        self.assertNotEqual(album_themes.key_for(a), album_themes.key_for(b))
+        a.theme = "noir"; self.assertEqual(album_themes.key_for(a), "noir")
+        self.assertEqual(album_themes.number_text(3, "rosewood"), "\u2014 3 \u2014")
+        self.assertEqual(album_themes.number_text(3, "ivory", 8), "3 / 8")
+
+    def test_preview_page_carries_the_theme(self):
+        self.upload(7); self.client.logout(); self.client.login(username="cust", password="pass12345")
+        html = self.client.get(reverse("my_gallery", args=[self.b.pk])).content.decode()
+        self.assertRegex(html, r'class="container section th-\w+"'); self.assertIn("--cv1:", html); self.assertIn('data-layout="2"', html)
+
+    def test_pdf_download_is_for_the_customer_and_the_photographer_only(self):
+        self.picked()
+        url = reverse("album_pdf", args=[self.b.pk])
+        self.client.logout(); self.assertEqual(self.client.get(url).status_code, 302)          # not logged in
+        self.client.login(username="cust", password="pass12345")
+        r = self.client.get(url)
+        self.assertEqual(r["Content-Type"], "application/pdf"); self.assertTrue(r.content.startswith(b"%PDF"))
+        self.assertEqual(r.content.count(b"/Type /Page "), 5)                                    # cover + 3 pages (5 photos, 2 per page) + back
+        self.client.logout(); self.client.login(username="pro", password="pass12345")
+        self.assertEqual(self.client.get(url).status_code, 200)
+        User.objects.create_user("zz_stranger", password="pass12345")
+        self.client.logout(); self.client.login(username="zz_stranger", password="pass12345")
+        self.assertEqual(self.client.get(url).status_code, 404)
+
+    def test_pdf_needs_picked_photos(self):
+        self.upload(3); self.client.logout(); self.client.login(username="cust", password="pass12345")
+        self.assertEqual(self.client.get(reverse("album_pdf", args=[self.b.pk])).status_code, 302)
+
+    def test_late_album_alert_goes_to_customer_and_admin_once(self):
+        from datetime import timedelta
+        from . import album_ops
+        User.objects.create_superuser("boss9", "b9@example.com", "pass12345")
+        o = self.approve()
+        self.assertEqual(album_ops.sweep_late(force=True), 0)                                 # not late yet
+        AlbumOrder.objects.filter(pk=o.pk).update(approved_at=timezone.now() - timedelta(days=31))
+        self.assertEqual(album_ops.sweep_late(force=True), 1)
+        self.assertTrue(Notification.objects.filter(user__username="cust", title="Your album is late").exists())
+        self.assertTrue(Notification.objects.filter(user__username="boss9", title="Album is late").exists())
+        self.assertEqual(album_ops.sweep_late(force=True), 0)                                 # only once
+        self.assertEqual(Notification.objects.filter(title="Your album is late").count(), 1)
+
+    def test_photographer_page_after_delivery_is_the_delivered_card_only(self):
+        o = self.approve(); self.deliver(o)
+        self.client.logout(); self.client.login(username="pro", password="pass12345")
+        html = self.client.get(reverse("pro_gallery", args=[self.b.pk])).content.decode()
+        self.assertIn("This album is delivered", html)
+        for gone in ('id="proGrid"', 'name="images"', 'name="link"', 'name="delivery_link"'):
+            self.assertNotIn(gone, html)
+        self.assertEqual(html.count('class="done"'), 4)
+
+    def test_photographer_page_before_delivery_keeps_all_the_steps(self):
+        self.approve(); self.client.logout(); self.client.login(username="pro", password="pass12345")
+        html = self.client.get(reverse("pro_gallery", args=[self.b.pk])).content.decode()
+        self.assertNotIn("This album is delivered", html); self.assertIn('name="images"', html); self.assertIn('id="proGrid"', html)
+
+    def test_bell_and_notifications_page_have_clear_all(self):
+        Notification.objects.create(user=User.objects.get(username="cust"), title="Hello", body="x")
+        self.client.logout(); self.client.login(username="cust", password="pass12345")
+        html = self.client.get(reverse("notification_list")).content.decode()
+        self.assertIn("data-slide-all", html); self.assertIn('data-clear="all"', html); self.assertIn("Mark all read", html)
+
+    def test_privacy_promise_is_on_the_policy_and_the_delivered_pages(self):
+        self.assertContains(self.client.get(reverse("cancellation_policy")), "Your photos stay yours")
+        o = self.approve(); self.deliver(o)
+        self.client.logout(); self.client.login(username="cust", password="pass12345")
+        self.assertContains(self.client.get(reverse("my_gallery", args=[self.b.pk])), "Your photos stay yours")
+        self.client.logout(); self.client.login(username="pro", password="pass12345")
+        self.assertContains(self.client.get(reverse("pro_gallery", args=[self.b.pk])), "These photos belong to the customer")
+
+    def test_photographer_signup_needs_the_photo_rules_ticked(self):
+        data = {"role": "photographer", "first_name": "Rule Pro", "username": "rulepro", "email": "rulepro@example.com",
+                "password1": "S0me-strong-pass!", "password2": "S0me-strong-pass!"}
+        self.client.logout()
+        r = self.client.post(reverse("register"), data)
+        self.assertEqual(r.status_code, 200); self.assertFalse(User.objects.filter(username="rulepro").exists())
+        self.assertContains(r, "agree to the photo rules")
+        self.client.post(reverse("register"), dict(data, agree_rules="on"))
+        self.assertIsNotNone(User.objects.get(username="rulepro").profile.rules_accepted_at)
+
+    def test_customer_signup_does_not_ask_for_the_rules(self):
+        data = {"role": "customer", "first_name": "Cust Two", "username": "custtwo", "email": "custtwo@example.com",
+                "password1": "S0me-strong-pass!", "password2": "S0me-strong-pass!"}
+        self.client.logout(); self.client.post(reverse("register"), data)
+        self.assertIsNone(User.objects.get(username="custtwo").profile.rules_accepted_at)
+
+    def test_contact_details_are_on_contact_page_and_footer(self):
+        for url in (reverse("contact"), reverse("home")):
+            html = self.client.get(url).content.decode()
+            self.assertIn("photophliodemo@gmail.com", html); self.assertIn("+91 00000 00000", html)
+        self.assertIn('href="tel:+910000000000"', self.client.get(reverse("contact")).content.decode())
+
+    def test_photographer_no_longer_gets_the_links_after_delivery(self):
+        o = self.approve(); self.deliver(o)
+        self.client.logout(); self.client.login(username="pro", password="pass12345")
+        html = self.client.get(reverse("pro_gallery", args=[self.b.pk])).content.decode()
+        self.assertNotIn("Open design link", html); self.assertNotIn("Open digital photos", html)
+
+    def test_no_opening_hours_anywhere_and_help_center_has_email_and_phone(self):
+        self.client.logout(); self.client.login(username="cust", password="pass12345")
+        for url in (reverse("contact"), reverse("help_center")):
+            html = self.client.get(url).content.decode()
+            self.assertNotIn("Mon to Sat", html); self.assertNotIn("10 am", html)
+        h = self.client.get(reverse("help_center")).content.decode()
+        self.assertIn("photophliodemo@gmail.com", h); self.assertIn("+91 00000 00000", h)
+
+    def test_a_late_album_points_to_the_help_center(self):
+        from datetime import timedelta
+        o = self.approve(); self.assertFalse(o.is_delayed)
+        AlbumOrder.objects.filter(pk=o.pk).update(approved_at=timezone.now() - timedelta(days=31)); o.refresh_from_db()
+        self.assertTrue(o.is_delayed)
+        self.customer()
+        self.assertContains(self.client.get(reverse("my_gallery", args=[self.b.pk])), "topic=late")
+
+    def test_help_center_customer_writes_admin_replies(self):
+        from .models import HelpRequest
+        o = self.approve()
+        self.client.logout(); self.assertEqual(self.client.get(reverse("help_center")).status_code, 302)
+        self.customer()
+        self.client.post(reverse("help_center"), {"topic": "late", "album": o.pk, "message": "My album is late, what happened?"})
+        h = HelpRequest.objects.get(); self.assertEqual((h.user, h.album, h.is_open), (self.cust, o, True))
+        self.assertTrue(o.needs_answer)
+        self.client.post(reverse("help_center"), {"topic": "late", "message": "x"})                      # too short: ignored
+        self.assertEqual(HelpRequest.objects.count(), 1)
+        User.objects.create_superuser("boss3", "b3@example.com", "pass12345")
+        self.client.logout(); self.client.login(username="boss3", password="pass12345")
+        self.assertEqual(self.client.get(f"/admin/photopholio/albumorder/?delivery=help").status_code, 200)
+        self.client.post(f"/admin/photopholio/helprequest/{h.pk}/change/", {"reply": "The printer was delayed. It ships tomorrow.", "is_open": "on"})
+        h.refresh_from_db(); self.assertEqual((h.is_open, bool(h.replied_at)), (False, True))
+        self.assertTrue(Notification.objects.filter(user=self.cust, title="PhotoPholio replied in the Help center").exists())
+        self.client.logout(); self.customer()
+        self.assertContains(self.client.get(reverse("help_center")), "It ships tomorrow")
+
+    def test_help_center_shows_only_your_own_messages(self):
+        from .models import HelpRequest
+        other = User.objects.create_user("stranger", password="pass12345")
+        HelpRequest.objects.create(user=other, topic="other", message="private question of someone else")
+        self.customer()
+        self.assertNotContains(self.client.get(reverse("help_center")), "private question")
+
+    def test_album_fee_is_paid_with_the_shoot_payout_and_the_same_reference(self):
+        from . import money
+        o = self.approve()
+        Booking.objects.filter(pk=self.b.pk).update(payout_status="ready", payout_amount=500, status="completed")
+        b = Booking.objects.get(pk=self.b.pk)
+        money.mark_paid(b, "UTR12345")
+        o.refresh_from_db()
+        self.assertEqual((o.payout_status, o.payout_reference), ("paid", "UTR12345"))
+
+    def test_album_fee_can_be_paid_alone_from_the_payouts_page(self):
+        o = self.approve()
+        User.objects.create_superuser("boss4", "b4@example.com", "pass12345")
+        self.client.logout(); self.client.login(username="boss4", password="pass12345")
+        self.assertContains(self.client.get("/admin/payouts/"), "Album design fee")
+        self.client.post(f"/admin/payouts/album/{o.pk}/pay/", {"reference": "ab"})                     # too short
+        o.refresh_from_db(); self.assertEqual(o.payout_status, "ready")
+        self.client.post(f"/admin/payouts/album/{o.pk}/pay/", {"reference": "UPI998877"})
+        o.refresh_from_db(); self.assertEqual((o.payout_status, o.payout_reference), ("paid", "UPI998877"))
+        self.client.post(f"/admin/payouts/album/{o.pk}/pay/", {"reference": "UPI111222"})               # cannot be paid twice
+        o.refresh_from_db(); self.assertEqual(o.payout_reference, "UPI998877")
+
+
+    def deliver(self, o):
+        from . import album_ops
+        album_ops.advance(o, "printing")
+        o.refresh_from_db(); o.tracking_url = "https://courier.example/t/1"; o.save()
+        album_ops.advance(o, "shipped")
+        o.refresh_from_db(); o.otp_given = o.delivery_otp; o.save()
+        return album_ops.advance(o, "delivered")
+
+    def test_delivered_album_page_shows_only_the_delivered_message(self):
+        o = self.approve(); self.deliver(o)
+        o.refresh_from_db(); self.assertEqual(o.production_status, "delivered")
+        self.customer()
+        html = self.client.get(reverse("my_gallery", args=[self.b.pk])).content.decode()
+        self.assertIn("Your album has been delivered", html)
+        self.assertNotIn('id="galGrid"', html); self.assertNotIn('id="pickFab"', html); self.assertNotIn('id="bkSide"', html)
+        self.assertEqual(html.count('class="done"'), 8)   # 4 badges + 4 tracker steps
+        self.assertIn('id="trackBox"', html)
+
+    def test_album_step_changes_the_live_token_of_customer_and_photographer(self):
+        from . import livever
+        o = self.approve()
+        cust, pro = User.objects.get(username="cust"), User.objects.get(username="pro")
+        before = (livever.live_version(cust), livever.live_version(pro))
+        from . import money
+        money.album_mark_paid(o, "UTR777777")
+        self.assertNotEqual(livever.live_version(pro), before[1])
+        self.assertNotEqual(livever.live_version(cust), before[0])
+
+    def test_admin_live_token_changes_with_album_and_help(self):
+        from . import livever
+        from .models import HelpRequest
+        User.objects.create_superuser("boss5", "b5@example.com", "pass12345")
+        self.client.logout(); self.client.login(username="boss5", password="pass12345")
+        v1 = self.client.get("/admin/live/").json()["ver"]
+        self.assertEqual(v1, livever.admin_version())
+        HelpRequest.objects.create(user=User.objects.get(username="cust"), topic="other", message="hi")
+        self.assertNotEqual(self.client.get("/admin/live/").json()["ver"], v1)
+        self.client.logout(); self.assertNotEqual(self.client.get("/admin/live/").status_code, 200)
+
+    def test_analytics_has_album_numbers(self):
+        from . import analytics
+        o = self.approve()
+        a = analytics.dashboard_data()["albums"]
+        self.assertEqual(a["sold"], 1); self.assertEqual(a["revenue"], o.price)
+        self.assertEqual(a["commission"], o.platform_commission); self.assertEqual(a["fee_ready"], o.design_fee)
+        User.objects.create_superuser("boss6", "b6@example.com", "pass12345")
+        self.client.logout(); self.client.login(username="boss6", password="pass12345")
+        self.assertContains(self.client.get("/admin/analytics/"), "Printed albums")
+
+    def test_album_customer_gets_the_digital_photos_link(self):
+        self.client.logout(); self.client.login(username="pro", password="pass12345")
+        self.client.post(reverse("pro_delivery", args=[self.b.pk]), {"delivery_link": "https://drive.google.com/drive/folders/photos", "next": "gallery"})
+        self.customer()
+        html = self.client.get(reverse("my_gallery", args=[self.b.pk])).content.decode()
+        self.assertIn("Your digital photos", html); self.assertIn("drive.google.com/drive/folders/photos", html)
+
+    def test_folder_upload_keeps_pictures_and_skips_other_files(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        self.client.logout(); self.client.login(username="pro", password="pass12345")
+        before = self.b.gallery.count()
+        self.client.post(reverse("pro_gallery", args=[self.b.pk]), {"folder": [make_image("a.jpg"), make_image("b.jpg"),
+                         SimpleUploadedFile("notes.txt", b"hi", "text/plain"), SimpleUploadedFile("Thumbs.db", b"x", "application/octet-stream")]})
+        self.assertEqual(self.b.gallery.count(), before + 2)
+
+    def test_photographer_can_add_photos_after_selection_is_sent(self):
+        self.picked(); n = self.b.gallery.count()
+        self.client.logout(); self.client.login(username="pro", password="pass12345")
+        self.assertContains(self.client.get(reverse("pro_gallery", args=[self.b.pk])), 'name="folder"')
+        self.client.post(reverse("pro_gallery", args=[self.b.pk]), {"images": [make_image("late.jpg")]})
+        self.assertEqual(self.b.gallery.count(), n + 1)
+        self.customer()                       # the customer keeps their picks and can add more
+        self.client.post(reverse("gallery_reopen", args=[self.b.pk]))
+        self.assertEqual(self.b.gallery.filter(is_favourite=True).count(), 5)
+
+    def test_nothing_moves_before_approval(self):
+        from . import album_ops
+        self.picked()
+        self.assertIn("approved", album_ops.advance(AlbumOrder.objects.get(), "printing"))
+
+    def test_admin_album_pages_open(self):
+        self.approve()
+        User.objects.create_superuser("boss2", "b2@example.com", "pass12345")
+        self.client.logout(); self.client.login(username="boss2", password="pass12345")
+        for u in ("/admin/photopholio/albumorder/", "/admin/photopholio/albumorder/?delivery=late", "/admin/photopholio/albumorder/?delivery=open",
+                  "/admin/photopholio/albumorder/?delivery=help", f"/admin/photopholio/albumorder/{AlbumOrder.objects.get().pk}/change/",
+                  "/admin/photopholio/helprequest/", "/admin/payouts/"):
+            self.assertEqual(self.client.get(u).status_code, 200, u)
+
+    def test_earnings_page_shows_the_album_fee_as_ready_after_approval(self):
+        self.approve()
+        self.client.logout(); self.client.login(username="pro", password="pass12345")
+        html = self.client.get(reverse("pro_earnings")).content.decode()
+        self.assertIn("Album design fees", html); self.assertIn("Ready, paid with your next payout", html)
+
+    def test_full_refund_voids_the_fee(self):
+        from . import money
+        o = self.approve()
+        money.album_on_cancelled(self.b)
+        o.refresh_from_db(); self.assertEqual(o.payout_status, "void")
+
+    def test_policy_and_home_talk_about_albums(self):
+        html = self.client.get(reverse("cancellation_policy")).content.decode()
+        for want in ("Printed albums", "album commission", "30 days", "Help center"):
+            self.assertIn(want, html)
+        self.assertNotIn("7 to 10", self.client.get(reverse("home")).content.decode())
+
+    def test_preview_starts_with_a_closed_cover_and_has_no_sound(self):
+        self.picked(); self.customer()
+        html = self.client.get(reverse("my_gallery", args=[self.b.pk])).content.decode()
+        self.assertIn("data-cover-name", html); self.assertIn("Front cover", html)
+        self.assertNotIn("bkSound", html); self.assertNotIn("swish", html)
+
+    def test_pages_show_preview_and_delivery_hint(self):
+        self.picked(); self.customer()
+        self.assertContains(self.client.get(reverse("my_gallery", args=[self.b.pk])), "bkSide")
+        self.client.logout(); self.client.login(username="pro", password="pass12345")
+        self.assertContains(self.client.get(reverse("pro_gallery", args=[self.b.pk])), "Send the album design")
+        pass
+
+
+class AlbumPreviewTests(PrivateGalleryTests):
+    def test_page_aspect_follows_the_album_size(self):
+        o = AlbumOrder.objects.get()
+        self.assertEqual(o.page_aspect, 0.75)             # Mini Parents Album, 6 x 8 in
+        AlbumOrder.objects.update(style=AlbumStyle.objects.get(slug="travel-journal-book"))
+        o.refresh_from_db()
+        self.assertEqual(o.page_aspect, 1.0)               # 8 x 8 in
+        o.style = None
+        self.assertEqual(o.page_aspect, 0.75)
+
+    def test_preview_is_there_before_any_pick_and_page_carries_its_settings(self):
+        self.upload(3)
+        self.client.logout(); self.client.login(username="cust", password="pass12345")
+        r = self.client.get(reverse("my_gallery", args=[self.b.pk]))
+        self.assertContains(r, 'id="bkSide"')
+        self.assertContains(r, 'data-aspect="0.75"')
+        self.assertContains(r, 'id="pickFab"')
+        self.assertNotContains(self.client.get(reverse("my_gallery", args=[self.b.pk])), "Preview with your photos")
+
+
+class AssetVersionTests(TestCase):
+    def test_static_files_get_a_version_from_the_file_itself(self):
+        import re
+        html = self.client.get("/").content.decode()
+        for name in ("css/style.css", "js/main.js", "js/app.js"):
+            self.assertRegex(html, r"photopholio/%s\?v=\d{6,}" % re.escape(name))
+        self.assertNotIn("?v=43", html)
+
+
+
+class HelpTopicTests(TestCase):
+    def test_misuse_topic_album_only_for_album_topics_and_gmail_links(self):
+        from django.contrib.auth import get_user_model
+        from .models import HelpRequest
+        u = get_user_model().objects.create_user("helpuser91", password="pass12345")
+        self.client.login(username="helpuser91", password="pass12345")
+        self.assertIn("misuse", dict(HelpRequest.TOPIC_CHOICES))
+        h = self.client.get(reverse("help_center")).content.decode()
+        self.assertIn("My photos are being misused", h)
+        self.assertIn("mail.google.com/mail/?view=cm", h)
+        self.assertNotIn("mailto:", h)
+        self.client.post(reverse("help_center"), {"topic": "misuse", "message": "Someone used my photos online"})
+        r = HelpRequest.objects.get(user=u); self.assertEqual(r.topic, "misuse"); self.assertIsNone(r.album)

@@ -21,34 +21,47 @@
           {% if g.photographer.payout_details %}Send to: <strong>{{ g.photographer.payout_details }}</strong>{% else %}No payout details yet. Ask them to add them in their profile.{% endif %}</div></div>
       <div class="h5 mb-0">&#8377;{{ g.total }}</div>
     </div>
-    <table class="table table-sm mt-2 mb-0"><tbody>
+    <div class="table-responsive"><table class="table table-sm mt-2 mb-0"><tbody>
     {% for b in g.bookings %}
       <tr>
         <td>#{{ b.pk }} &middot; {{ b.date_label }}<div class="small text-muted">{{ b.user.username }} paid &#8377;{{ b.amount }}, commission &#8377;{{ b.platform_fee }} ({{ b.commission_percent }}%){% if b.payout_note %} &middot; {{ b.payout_note }}{% endif %}</div></td>
-        <td><strong>&#8377;{{ b.payout_amount }}</strong></td>
+        <td><strong>&#8377;{{ b.payout_amount }}</strong>{% if b.album_fee %}<div class="small text-muted">+ &#8377;{{ b.album_fee }} album design fee<br>(paid with the same reference)</div>{% endif %}</td>
         <td class="text-right"><form method="post" action="{% url 'admin:photopholio_payout_pay' b.pk %}" class="form-inline justify-content-end">{% csrf_token %}
           <input class="form-control form-control-sm mr-2" name="reference" placeholder="UTR / transaction id" maxlength="60" required aria-label="Transfer reference">
           <button class="btn btn-sm btn-success" type="submit">Mark paid</button></form></td>
       </tr>
     {% endfor %}
-    </tbody></table>
+    {% for o in g.albums %}
+      <tr>
+        <td>Album design fee &middot; {{ o.style_name }}, {{ o.booking.date_label }}<div class="small text-muted">Customer approved the design</div></td>
+        <td><strong>&#8377;{{ o.design_fee }}</strong></td>
+        <td class="text-right"><form method="post" action="{% url 'admin:photopholio_payout_album_pay' o.pk %}" class="form-inline justify-content-end">{% csrf_token %}
+          <input class="form-control form-control-sm mr-2" name="reference" placeholder="UTR / transaction id" maxlength="60" required aria-label="Transfer reference">
+          <button class="btn btn-sm btn-success" type="submit">Mark paid</button></form></td>
+      </tr>
+    {% endfor %}
+    </tbody></table></div>
   </div>
 {% empty %}<p class="p-3 mb-0 text-muted">Nothing to pay right now.</p>{% endfor %}
 </div></div>
 
 {% if recover %}
 <div class="card border-danger mb-4"><div class="card-header"><strong>To recover from photographers ({{ recover|length }})</strong></div><div class="card-body p-0">
-  <table class="table table-sm mb-0"><tbody>
+  <div class="table-responsive"><table class="table table-sm mb-0"><tbody>
   {% for b in recover %}<tr><td>#{{ b.pk }} {{ b.photographer.name }} &middot; {{ b.date_label }}<div class="small text-danger">{{ b.payout_note }}</div></td>
     <td class="text-right"><form method="post" action="{% url 'admin:photopholio_payout_recovered' b.pk %}" class="form-inline justify-content-end">{% csrf_token %}
       <input class="form-control form-control-sm mr-2" name="note" placeholder="Note (optional)" maxlength="100" aria-label="Note">
       <button class="btn btn-sm btn-outline-danger" type="submit">Mark recovered</button></form></td></tr>{% endfor %}
-  </tbody></table></div></div>
+  </tbody></table></div></div></div>
 {% endif %}
 
 <div class="card mb-3"><div class="card-header"><strong>Recently paid</strong></div><div class="card-body p-0">
-{% if recent %}<table class="table table-sm mb-0"><thead><tr><th>Photographer</th><th>Event</th><th>Amount</th><th>Reference</th><th>Paid on</th></tr></thead><tbody>
+{% if recent %}<div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Photographer</th><th>Event</th><th>Amount</th><th>Reference</th><th>Paid on</th></tr></thead><tbody>
   {% for b in recent %}<tr><td>{{ b.photographer.name }}</td><td>{{ b.date_label }}</td><td>&#8377;{{ b.payout_amount }}</td><td>{{ b.payout_reference }}</td><td>{{ b.payout_paid_at|date:"j M Y" }}</td></tr>{% endfor %}
-</tbody></table>{% else %}<p class="p-3 mb-0 text-muted">No payouts sent yet.</p>{% endif %}</div></div>
+</tbody></table></div>{% else %}<p class="p-3 mb-0 text-muted">No payouts sent yet.</p>{% endif %}</div></div>
+{% if recent_albums %}<div class="card mb-3"><div class="card-header"><strong>Album design fees paid</strong></div><div class="card-body p-0">
+<div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Photographer</th><th>Album</th><th>Amount</th><th>Reference</th><th>Paid on</th></tr></thead><tbody>
+  {% for o in recent_albums %}<tr><td>{{ o.booking.photographer.name }}</td><td>{{ o.style_name }}</td><td>&#8377;{{ o.design_fee }}</td><td>{{ o.payout_reference }}</td><td>{{ o.payout_paid_at|date:"j M Y" }}</td></tr>{% endfor %}
+</tbody></table></div></div></div>{% endif %}
 <p class="small text-muted">This is a ledger. The site's checkout is a demo, so you send the money yourself (UPI or bank transfer) and write the reference here; the photographer is emailed.</p>
 {% endblock %}

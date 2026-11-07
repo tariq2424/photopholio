@@ -53,6 +53,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "photopholio.context_processors.support",
             ],
         },
     },
@@ -149,6 +150,7 @@ if not DEBUG:
 
 # --- Jazzmin (admin theme) -----------------------------------------------------
 JAZZMIN_SETTINGS = {
+    "custom_js": "photopholio/js/admin-live.js",
     "site_title": "PhotoPholio Admin",
     "site_header": "PhotoPholio",
     "site_brand": "PhotoPholio",
@@ -174,6 +176,8 @@ JAZZMIN_SETTINGS = {
         {"name": "Analytics", "url": "admin:photopholio_analytics", "permissions": ["auth.view_user"]},
         {"name": "Payouts", "url": "admin:photopholio_payouts", "permissions": ["auth.view_user"]},
         {"name": "Disputes", "url": "admin:photopholio_disputes", "permissions": ["auth.view_user"]},
+        {"name": "Albums", "url": "admin:photopholio_albumorder_changelist", "permissions": ["auth.view_user"]},
+        {"name": "Help center", "url": "admin:photopholio_helprequest_changelist", "permissions": ["auth.view_user"]},
     ],
     "custom_links": {
         "photopholio": [
@@ -186,3 +190,9 @@ JAZZMIN_SETTINGS = {
         ]
     },
 }
+
+# Help center: shown on the Help center page when set (leave empty to show no phone number).
+# Contact details shown on the Contact page, the footer and the Help center.
+# The phone number is a DUMMY. Replace it here, or set the SUPPORT_PHONE environment variable on Render.
+SUPPORT_PHONE = os.environ.get("SUPPORT_PHONE", "+91 00000 00000")
+SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "photophliodemo@gmail.com")
