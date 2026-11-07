@@ -623,7 +623,7 @@
   function startPolling() {
     clearInterval(pollTimer);
     if (!$('#bell')) return;
-    pollTimer = setInterval(function () { poll(false); }, 5000);
+    pollTimer = setInterval(function () { poll(false); }, 10000);
   }
   /* when something changes on the server the page you are looking at is refreshed in place (no reload, scroll stays) */
   var chip = null;
@@ -728,6 +728,7 @@
     var instant = {top: 0, left: 0, behavior: 'instant'};
     if (target) { target.scrollIntoView(); }
     else if (opts.restore !== undefined) { instant.top = opts.restore; scrollTo(instant); }
+    else if (opts.post && cur === dest) { instant.top = keepY; scrollTo(instant); }      // an action on this same page (arrived, confirm, complete...): stay where you were
     else scrollTo(instant);
     adopted.setAttribute('tabindex', '-1'); try { adopted.focus({preventScroll: true}); } catch (e) {}
     poll(opts.post, opts.post);       // after your own action: just note what is already there, no panel

@@ -1133,3 +1133,29 @@ a.contact-card:hover{border-color:var(--ink)}
 .fcontact a{display:flex;gap:8px;align-items:center;color:var(--ink);text-decoration:none;font-weight:500;font-size:.9rem;white-space:nowrap}
 .fcontact a i{flex:none}
 @media(max-width:380px){.fcontact a{font-size:.82rem}}
+
+/* Patch 40: phone layout of the album gallery (small photo thumbnails, big album, 1/2/4 inside the card) */
+@media (max-width:575px){
+  #galRoot.container{padding-left:12px;padding-right:12px}
+  .gal-masonry{column-width:auto;column-count:auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px}
+  .gal-masonry .gal-item{margin:0;aspect-ratio:1;border-width:2px;border-radius:6px}
+  .gal-masonry .gal-item img{height:100%;min-height:0;object-fit:cover}
+  .gal-item .gal-heart{width:26px;height:26px;top:3px;right:3px;font-size:.78rem}
+  .gal-item .gal-del{bottom:3px;right:3px}.gal-item .gal-del button{width:26px;height:26px;font-size:.72rem}
+  .gal-side{padding:10px}
+  .bk-head{flex-wrap:wrap}
+  .bk-head .seg{flex:1 1 100%;display:flex}
+  .bk-head .seg button{flex:1;min-width:0}
+  .bk-wrap{padding:14px 4px}
+  .bk-nav{gap:8px}
+}
+
+/* Patch 41: closed album (front/back cover) is shown big on every screen size */
+.bk-wrap:has(.bk[data-pose="front"]),.bk-wrap:has(.bk[data-pose="back"]){padding-top:17%;padding-bottom:17%}
+.bk[data-pose="front"]{transform:translateX(-37.5%) scale(1.5)}
+.bk[data-pose="back"]{transform:translateX(37.5%) scale(1.5)}
+
+/* Patch 41: closed album (front / back cover) is shown bigger on every screen */
+.bk-wrap:has(.bk[data-pose="front"]),.bk-wrap:has(.bk[data-pose="back"]){padding-top:46px;padding-bottom:46px}
+.bk[data-pose="front"]{transform:translateX(-35%) scale(1.4)}
+.bk[data-pose="back"]{transform:translateX(35%) scale(1.4)}

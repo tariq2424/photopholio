@@ -26,7 +26,7 @@
       })
       .catch(function () { busy = false; });
   }
-  setInterval(tick, 5000);
+  setInterval(tick, 10000);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { tick(); } });
   tick();
 })();
