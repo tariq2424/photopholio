@@ -1210,3 +1210,39 @@ a.contact-card:hover{border-color:var(--ink)}
 .theme-toggle:hover .theme-sun{transform:rotate(40deg)}
 [data-bs-theme="dark"] .theme-toggle:hover .theme-moon{transform:rotate(-20deg) scale(1.1)}
 @media(max-width:575.98px){.theme-toggle svg{width:14px;height:14px}}
+
+/* Patch 47: under 600px the day/night switch is one round button with a single icon: a bright yellow sun in light mode, a moon in dark mode */
+@media(max-width:599.98px){
+  .theme-toggle,[data-bs-theme="dark"] .theme-toggle{width:2.4rem!important;height:2.4rem!important;padding:0!important;border-radius:50%!important;overflow:hidden;position:relative;display:inline-flex;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,#FFF3CF,#FFD77A)!important;border:1.5px solid #F0C65A!important;box-shadow:0 2px 8px -3px rgba(232,163,23,.6)!important}
+  [data-bs-theme="dark"] .theme-toggle{background:linear-gradient(135deg,#222B4A,#0B0E18)!important;border-color:#3A4570!important;box-shadow:0 2px 10px -3px rgba(90,110,200,.55)!important}
+  .theme-toggle::before{display:none!important}
+  .theme-toggle svg{position:absolute;inset:0;margin:auto!important;width:20px;height:20px;transition:transform .6s cubic-bezier(.5,1.5,.4,1),opacity .35s}
+  .theme-toggle .theme-sun{color:#F59E00!important;opacity:1;transform:none;filter:drop-shadow(0 0 3px rgba(245,158,0,.55))}
+  .theme-toggle .theme-moon{color:#F4F6FB!important;opacity:0;transform:rotate(-90deg) scale(.4)}
+  [data-bs-theme="dark"] .theme-toggle .theme-sun{opacity:0;transform:rotate(90deg) scale(.4)}
+  [data-bs-theme="dark"] .theme-toggle .theme-moon{color:#F4F6FB!important;opacity:1;transform:none;filter:drop-shadow(0 0 3px rgba(200,215,255,.5))}
+  .theme-toggle:hover .theme-sun,[data-bs-theme="dark"] .theme-toggle:hover .theme-moon{transform:none}
+}
+
+/* Patch 48: "From first look to final photos" fitted to each screen size */
+@media(max-width:991.98px){
+  .how-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;overflow:visible;margin-inline:0;padding-inline:0;flex-wrap:initial}
+  .how-tabs button{flex:initial;justify-content:center;text-align:center;line-height:1.2;padding:.6rem .5rem}
+  .how-title{max-width:none}
+}
+@media(max-width:767.98px){
+  .how{padding:2rem 0 2.2rem}
+  .how-title{font-size:clamp(1.55rem,7vw,2rem);margin-bottom:1rem}
+  .how-tabs{gap:6px;margin-bottom:1.1rem}
+  .how-tabs button{flex-direction:column;gap:.25rem;font-size:.74rem;border-radius:16px;padding:.55rem .25rem}
+  .how-tabs button i{font-size:1.15rem;line-height:1}
+  .how-step{gap:.9rem}
+  .how-copy{display:grid;grid-template-columns:auto 1fr;column-gap:.8rem;row-gap:.5rem;align-items:center}
+  .how-ico{width:46px;height:46px;font-size:1.2rem;margin:0;border-width:1.5px}
+  .how-copy h3{font-size:clamp(1.35rem,6vw,1.7rem);line-height:1.1}
+  .how-copy p{grid-column:1 / -1;font-size:1rem;margin:.1rem 0 0;max-width:none}
+  .demo{border-radius:20px;padding:14px}
+  .chip-d{font-size:.84rem;padding:.4rem .8rem}
+}
+@media(max-width:389.98px){.how-tabs button{font-size:.68rem}.chip-d{font-size:.8rem}}
