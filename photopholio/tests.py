@@ -4412,6 +4412,18 @@ class HelpTopicTests(TestCase):
         h = self.client.get(reverse("help_center")).content.decode()
         self.assertIn("My photos are being misused", h)
         self.assertIn("mail.google.com/mail/?view=cm", h)
-        self.assertNotIn("mailto:", h)
+        self.assertIn('data-mailto="mailto:', h)
+        self.assertIn('id="hAlbumBox"', h)  # shown even with no paid album
         self.client.post(reverse("help_center"), {"topic": "misuse", "message": "Someone used my photos online"})
         r = HelpRequest.objects.get(user=u); self.assertEqual(r.topic, "misuse"); self.assertIsNone(r.album)
+
+
+class AccountHeaderTests(TestCase):
+    def test_logged_in_shows_name_role_and_logged_out_shows_pill(self):
+        u = User.objects.create_user("avuser44", password="pass12345", first_name="Asha", last_name="Rao")
+        h = self.client.get(reverse("home")).content.decode()
+        self.assertIn("login-pill", h); self.assertNotIn("acct-btn", h)
+        self.client.login(username="avuser44", password="pass12345")
+        h = self.client.get(reverse("home")).content.decode()
+        self.assertIn("acct-btn", h); self.assertIn("Asha Rao", h); self.assertIn("@avuser44", h)
+        self.assertIn("Customer", h); self.assertNotIn("login-pill", h)

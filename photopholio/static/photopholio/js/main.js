@@ -131,7 +131,7 @@ document.addEventListener('click', function (e) {
 window.ppReveal = function () {
   var calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (calm || !('IntersectionObserver' in window)) return;
-  var groups = ['.kinds .kind', '.grid-cards .pcard-wrap', '.flow li', '.trust-row > div', '.cta-band', '.section-head', '.panel', '.pkg'];
+  var groups = ['.film-head', '.bento .fr', '.kinds .kind', '.grid-cards .pcard-wrap', '.flow li', '.trust-row > div', '.cta-band', '.section-head', '.panel', '.pkg'];
   var io = new IntersectionObserver(function (entries) {
     entries.forEach(function (en) {
       if (!en.isIntersecting) return;

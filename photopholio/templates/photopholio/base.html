@@ -30,7 +30,7 @@
   <div class="container">
     <a class="navbar-brand brand" href="{% url 'home' %}" aria-label="PhotoPholio home">{% include 'photopholio/_logo.html' %}</a>
     <div class="nav-actions d-flex align-items-center gap-2">
-      <button type="button" class="btn btn-outline-dark theme-toggle" id="themeToggle" aria-label="Switch to dark mode" title="Switch between light and dark mode"><i class="bi bi-moon-stars theme-moon" aria-hidden="true"></i><i class="bi bi-sun theme-sun" aria-hidden="true"></i></button>
+      <button type="button" class="btn btn-outline-dark theme-toggle" id="themeToggle" aria-label="Switch to dark mode" title="Switch between light and dark mode"><svg class="theme-moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 14.5A8 8 0 0 1 9.5 5a8 8 0 1 0 9.5 9.5z"/><path d="M17.5 3.5v3M16 5h3" stroke-width="1.5"/></svg><svg class="theme-sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg></button>
       {% if user.is_authenticated %}
         {% load notification_tags %}{% unread_notifications user as unread_n %}{% live_version user as live_ver %}{% recent_notifications user 6 as recent_n %}
         <div class="dropdown bell" id="bell" data-count-url="{% url 'notification_count' %}" data-list-url="{% url 'notification_list' %}" data-bulk-url="{% url 'notification_bulk' %}" data-ver="{{ live_ver }}">
@@ -41,8 +41,10 @@
           </div>
         </div>
         <div class="dropdown">
-          <button class="btn btn-outline-dark dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-person-circle"></i><span class="d-none d-sm-inline"> {{ user.first_name|default:user.username }}</span></button>
+          <button class="btn acct-btn" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Account: {{ user.get_full_name|default:user.username }}"><span class="av" aria-hidden="true">{{ user.first_name|default:user.username|slice:":1"|upper }}<i class="dot"></i></span></button>
           <ul class="dropdown-menu dropdown-menu-end">
+            <li class="who"><span class="av lg" aria-hidden="true">{{ user.first_name|default:user.username|slice:":1"|upper }}</span><span class="wt"><b class="n">{% if user.profile.role == 'photographer' and user.photographer_profile %}{{ user.photographer_profile.name|default:user.get_full_name|default:user.username }}{% else %}{{ user.get_full_name|default:user.username }}{% endif %}</b><span class="r">{% if user.profile.role == 'photographer' %}Photographer{% else %}Customer{% endif %}</span><span class="u">@{{ user.username }}</span></span></li>
+            <li><hr class="dropdown-divider"></li>
             {% if user.profile.role == 'photographer' %}
             <li><a class="dropdown-item" href="{% url 'pro_dashboard' %}"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
             <li><a class="dropdown-item" href="{% url 'pro_profile' %}">Edit my profile</a></li>
@@ -61,11 +63,12 @@
             {% endif %}
             {% if user.is_staff %}<li><a class="dropdown-item" href="{% url 'admin:index' %}">Admin panel</a></li>{% endif %}
             <li><hr class="dropdown-divider"></li>
-            <li><form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="dropdown-item" type="submit">Log out</button></form></li>
+            <li><form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="dropdown-item out" type="submit"><i class="bi bi-box-arrow-right"></i> Log out</button></form></li>
           </ul>
         </div>
       {% else %}
         <a class="btn btn-outline-dark d-none d-lg-inline-flex" href="{% url 'login' %}">Log in</a>
+        <a class="login-pill d-lg-none" href="{% url 'login' %}"><i class="bi bi-person"></i> Log in</a>
         <a class="btn btn-primary d-none d-lg-inline-flex" href="{% url 'register' %}">Create account</a>
       {% endif %}
     </div>
@@ -107,7 +110,7 @@
     <div class="fcols">
       <div class="fbrand"><a class="brand" href="{% url 'home' %}" aria-label="PhotoPholio home">{% include 'photopholio/_logo.html' %}</a>
         <p class="muted mt-2 mb-0">Find a photographer you trust, see their real work, and book your date without the back and forth.</p>
-        {% if support_email or support_phone %}<p class="fcontact mt-3 mb-0">{% if support_email %}<a href="{{ support_email_link }}" target="_blank" rel="noopener"><i class="bi bi-envelope" aria-hidden="true"></i> {{ support_email }}</a>{% endif %}{% if support_phone %}<a href="tel:{{ support_phone_link }}"><i class="bi bi-telephone" aria-hidden="true"></i> {{ support_phone }}</a>{% endif %}</p>{% endif %}</div>
+        {% if support_email or support_phone %}<p class="fcontact mt-3 mb-0">{% if support_email %}<a href="{{ support_email_link }}" data-mailto="{{ support_email_mailto }}" target="_blank" rel="noopener"><i class="bi bi-envelope" aria-hidden="true"></i> {{ support_email }}</a>{% endif %}{% if support_phone %}<a href="tel:{{ support_phone_link }}"><i class="bi bi-telephone" aria-hidden="true"></i> {{ support_phone }}</a>{% endif %}</p>{% endif %}</div>
       <div><h6>Explore</h6><a href="{% url 'photographer_list' %}">Photographers</a><a href="{% url 'albums' %}">Albums</a><a href="{% url 'home' %}#styles">Styles</a><a href="{% url 'home' %}#how">How it works</a></div>
       <div><h6>Company</h6><a href="{% url 'contact' %}">Contact</a><a href="{% url 'help_center' %}">Help center</a><a href="{% url 'cancellation_policy' %}">Cancellation policy</a></div>
       <div><h6>Join</h6><a href="{% url 'register' %}">Sign up</a><a href="{% url 'register' %}?role=photographer">Join as a photographer</a></div>

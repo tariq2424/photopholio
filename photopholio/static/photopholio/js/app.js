@@ -1,3 +1,12 @@
+(function () {
+  // On a phone the email link opens the mail app (Gmail app if it is the default); desktop keeps Gmail in the browser.
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a[data-mailto]');
+    if (!a || !window.matchMedia || !window.matchMedia('(pointer: coarse)').matches) { return; }
+    e.preventDefault(); e.stopPropagation();
+    window.location.href = a.getAttribute('data-mailto');
+  }, true);
+})();
 /* PhotoPholio app layer.
    1. Soft navigation: links and forms load without a full page reload (the browser still does a normal load if anything is unusual).
    2. Themed dropdowns and a themed calendar that replace the browser's own (which ignore the site theme).

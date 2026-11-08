@@ -3,15 +3,15 @@
 {% block content %}
 <div class="container section" style="max-width:820px">
   <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-2">Help center</h1>
-  <p class="muted mb-4">Album late, or anything else? Write to us here and we reply on this page.{% if support_email %} Email <a href="{{ support_email_link }}" target="_blank" rel="noopener"><strong>{{ support_email }}</strong></a>.{% endif %}{% if phone %} You can also call <a href="tel:{{ support_phone_link }}"><strong>{{ phone }}</strong></a>.{% endif %}</p>
+  <p class="muted mb-4">Album late, or anything else? Write to us here and we reply on this page.{% if support_email %} Email <a href="{{ support_email_link }}" data-mailto="{{ support_email_mailto }}" target="_blank" rel="noopener"><strong>{{ support_email }}</strong></a>.{% endif %}{% if phone %} You can also call <a href="tel:{{ support_phone_link }}"><strong>{{ phone }}</strong></a>.{% endif %}</p>
 
   <div class="panel mb-4">
     <form method="post">{% csrf_token %}
       <div class="row g-2">
         <div class="col-md-5"><label class="form-label" for="hTopic">About</label>
           <select class="form-select" id="hTopic" name="topic">{% for k, v in topics %}<option value="{{ k }}"{% if k == pick_topic %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
-        {% if albums %}<div class="col-md-7" id="hAlbumBox"{% if pick_topic != "late" and pick_topic != "album" %} hidden{% endif %}><label class="form-label" for="hAlbum">Which album</label>
-          <select class="form-select" id="hAlbum" name="album"><option value="">Not about an album</option>{% for a in albums %}<option value="{{ a.pk }}"{% if a.pk|stringformat:"s" == pick_album %} selected{% endif %}>{{ a.style_name }}, {{ a.booking.date_label }}</option>{% endfor %}</select></div>{% endif %}
+        <div class="col-md-7" id="hAlbumBox"{% if pick_topic != "late" and pick_topic != "album" %} hidden{% endif %}><label class="form-label" for="hAlbum">Which album</label>
+          <select class="form-select" id="hAlbum" name="album"{% if not albums %} disabled{% endif %}><option value="">{% if albums %}Not about an album{% else %}No paid album yet{% endif %}</option>{% for a in albums %}<option value="{{ a.pk }}"{% if a.pk|stringformat:"s" == pick_album %} selected{% endif %}>{{ a.style_name }}, {{ a.booking.date_label }}</option>{% endfor %}</select></div>
       </div>
       <div class="alert alert-warning small mt-3 mb-0" id="hMisuseNote" hidden><strong>Your photos belong to you.</strong> Tell us who used them, where you saw them (a link or a screenshot description), and the booking. We look into every report.</div>
       <label class="form-label mt-3" for="hMsg" id="hMsgLabel">Your message</label>
