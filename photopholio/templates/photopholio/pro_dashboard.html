@@ -1,8 +1,8 @@
 {% extends 'photopholio/base.html' %}
 {% block title %}Photographer dashboard{% endblock %}
 {% block content %}
-<div class="container section" style="max-width:960px">
-  <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-1">Hi {{ user.first_name|default:user.username }}</h1>
+<div class="container section pro-dash" style="max-width:960px">
+  <h1 style="font-size:clamp(2.2rem,4.5vw,3rem)" class="mb-1 pro-h1">Hi {{ user.first_name|default:user.username }}</h1>
   <p class="muted mb-4">Your requests, bookings and profile, all in one place.</p>
 
   {% if not ph %}
@@ -12,10 +12,10 @@
     <a class="btn btn-primary" href="{% url 'pro_profile' %}">Create my profile</a>
   </div>
   {% else %}
-  <div class="panel mb-4">
+  <div class="panel mb-4 pro-status">
     <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
       <div><span class="muted small">Profile status</span><br><span class="pstatus pstatus-{{ ph.status }}">{{ ph.get_status_display }}</span></div>
-      <div class="d-flex gap-2 flex-wrap">
+      <div class="pro-actions d-flex gap-2 flex-wrap">
         <a class="btn btn-outline-dark btn-sm" href="{% url 'pro_profile' %}">Edit profile</a>
         <a class="btn btn-outline-dark btn-sm" href="{% url 'pro_portfolio' %}">Manage portfolio</a>
         <a class="btn btn-outline-dark btn-sm" href="{% url 'pro_availability' %}">Availability</a>
